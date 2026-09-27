@@ -8,7 +8,7 @@ var FIELDS = ["persistentID", "name", "album", "albumArtist", "artist", "genre",
               "trackNumber", "discNumber", "duration", "dateAdded", "playedCount", "playedDate"];
 
 function run(argv) {
-  var days = Number(argv[0] || 180);
+  var days = Number(argv[0] || 365);
   var since = new Date(Date.now() - days * 86400e3);
   var q = Application("Music").libraryPlaylists[0].tracks.whose({ dateAdded: { ">": since } });
   var cols = {};

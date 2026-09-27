@@ -1,6 +1,6 @@
 """最近追加したアルバムを、追加日・再生回数付きで iPhone に見せる Web アプリ。
 
-    python3 server.py [--port 8765] [--days 180]
+    python3 server.py [--port 8765] [--days 365]
 
 一覧のアルバムをタップすると shortcuts:// で iPhone のショートカット「アルバムを再生」を
 呼び、iPhone の Music アプリで再生させる。Web ページから Music アプリを直接操作する手段は
@@ -136,14 +136,15 @@ def get_artwork(pid: str) -> bytes | None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    default_days = 180
+    default_days = 365
 
     def do_GET(self):
         u = urlparse(self.path)
         if u.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", (HERE / "index.html").read_bytes())
         elif u.path == "/api/albums":
-            q = parse_qs(u.query)
+            # keep_blank_values が無いと、値の無い ?refresh が捨てられる
+            q = parse_qs(u.query, keep_blank_values=True)
             days = int(q.get("days", [self.default_days])[0])
             try:
                 body = json.dumps(get_albums(days, "refresh" in q), ensure_ascii=False)
@@ -174,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--days", type=int, default=180)
+    p.add_argument("--days", type=int, default=365)
     a = p.parse_args()
     Handler.default_days = a.days
     print(f"listening on :{a.port}", flush=True)

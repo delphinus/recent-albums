@@ -32,7 +32,7 @@ LAN 内から `http://<Mac のホスト名>.local:8765/` で開ける。認証�
 - ログ: `~/Library/Logs/recent-albums.log`
 - アートワークのキャッシュ: `~/Library/Caches/recent-albums/` (差し替えたときは消せば取り直す)
 
-手で動かすなら `python3 server.py [--port 8765] [--days 180]`。
+手で動かすなら `python3 server.py [--port 8765] [--days 365]`。
 
 ## iPhone 側のショートカット「アルバムを再生」
 
