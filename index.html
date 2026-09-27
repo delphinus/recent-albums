@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="最近のアルバム">
+<title>最近のアルバム</title>
+<style>
+  :root { color-scheme: light dark; --sub: #8e8e93; --line: rgba(128,128,128,.25); --accent: #fa2d48; }
+  body { margin: 0; font: 16px -apple-system, system-ui, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
+  header { position: sticky; top: 0; z-index: 1; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+           background: Canvas; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 20px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  h1 button { font-size: 14px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; }
+  .chip { flex: none; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; font-size: 13px;
+          background: none; color: inherit; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li a { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+  li a:active { background: var(--line); }
+  .art { flex: none; width: 64px; height: 64px; border-radius: 6px; background: var(--line); object-fit: cover; }
+  .info { min-width: 0; }
+  .title { font-weight: 600; }
+  .meta { font-size: 13px; color: var(--sub); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .unplayed { color: var(--accent); font-weight: 600; }
+  #status { padding: 16px 12px; color: var(--sub); }
+</style>
+</head>
+<body>
+<header>
+  <h1>最近のアルバム <button id="reload">更新</button></h1>
+  <div class="chips" id="chips"></div>
+</header>
+<div id="status">読み込み中…</div>
+<ul id="list"></ul>
+<script>
+const SHORTCUT = "アルバムを再生";
+let albums = [], genre = "", unplayedOnly = false;
+
+const fmtDate = s => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const fmtAge = s => {
+  const days = Math.floor((Date.now() - new Date(s)) / 86400e3);
+  return days === 0 ? "今日" : days < 30 ? `${days} 日前` : `${Math.floor(days / 30)} か月前`;
+};
+const fmtDur = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`; };
+const playUrl = a => "shortcuts://run-shortcut?name=" + encodeURIComponent(SHORTCUT)
+  + "&input=text&text=" + encodeURIComponent(a.album);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function chip(label, on, onclick) {
+  const b = document.createElement("button");
+  b.className = "chip" + (on ? " on" : "");
+  b.textContent = label;
+  b.onclick = onclick;
+  return b;
+}
+
+function render() {
+  const chips = document.getElementById("chips");
+  chips.replaceChildren(chip("未再生", unplayedOnly, () => { unplayedOnly = !unplayedOnly; render(); }));
+  const genres = [...new Set(albums.map(a => a.genre).filter(Boolean))];
+  for (const g of ["", ...genres]) {
+    chips.append(chip(g || "すべて", genre === g, () => { genre = g; render(); }));
+  }
+  const shown = albums.filter(a => (!genre || a.genre === genre) && (!unplayedOnly || a.playsStarted === 0));
+  document.getElementById("status").textContent = shown.length ? "" : "該当するアルバムがありません";
+  document.getElementById("list").innerHTML = shown.map(a => `
+    <li><a href="${playUrl(a)}">
+      <img class="art" loading="lazy" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
+      <div class="info">
+      <div class="title">${esc(a.album)}</div>
+      <div class="meta"><span>${esc(a.artist)}</span></div>
+      <div class="meta">
+        <span>追加 ${fmtDate(a.dateAdded)}</span>
+        ${a.playsStarted === 0 ? '<span class="unplayed">未再生</span>'
+          : `<span>▶ ${a.playsStarted} 回 (完走 ${a.playsFinished})</span><span>最終 ${a.lastPlayed ? fmtAge(a.lastPlayed) : "-"}</span>`}
+        <span>${a.tracks} 曲 · ${fmtDur(a.duration)}</span>
+      </div>
+      </div>
+    </a></li>`).join("");
+}
+
+async function load(refresh) {
+  document.getElementById("status").textContent = "読み込み中…";
+  try {
+    const r = await fetch("/api/albums" + (refresh ? "?refresh" : ""));
+    if (!r.ok) throw new Error(await r.text());
+    albums = await r.json();
+    render();
+  } catch (e) {
+    document.getElementById("status").textContent = "取得に失敗しました: " + e.message;
+  }
+}
+
+document.getElementById("reload").onclick = () => load(true);
+load(false);
+</script>
+</body>
+</html>
