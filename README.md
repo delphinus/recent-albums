@@ -30,9 +30,12 @@ LAN 内から `http://<Mac のホスト名>.local:8765/` で開ける。認証�
 
 - 初回は Music.app の操作を許可するダイアログが出る
 - ログ: `~/Library/Logs/recent-albums.log`
-- アートワークのキャッシュ: `~/Library/Caches/recent-albums/` (差し替えたときは消せば取り直す)
+- キャッシュ: `~/Library/Caches/recent-albums/` (一覧とアートワーク。アートワークを差し替えたときは消せば取り直す)
 
-手で動かすなら `python3 server.py [--port 8765] [--days 365]`。
+一覧は 1 時間ごとに裏で取り直してキャッシュに置き、開いたときはそれを返す (画面に取得時刻を出す)。
+「更新」ボタンを押すとその場で取り直す。Music.app が起動していないときは定期取得を見送る。
+
+手で動かすなら `python3 server.py [--port 8765] [--days 365] [--interval 3600]`。
 
 ## iPhone 側のショートカット「アルバムを再生」
 

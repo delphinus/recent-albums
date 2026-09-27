@@ -13,6 +13,7 @@
            background: Canvas; border-bottom: 1px solid var(--line); }
   h1 { font-size: 20px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
   h1 button { font-size: 14px; }
+  h1 small { font-size: 12px; font-weight: normal; color: var(--sub); }
   .chips { display: flex; gap: 6px; overflow-x: auto; }
   .chip { flex: none; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; font-size: 13px;
           background: none; color: inherit; }
@@ -30,7 +31,7 @@
 </head>
 <body>
 <header>
-  <h1>最近のアルバム <button id="reload">更新</button></h1>
+  <h1>最近のアルバム <span><small id="fetched"></small> <button id="reload">更新</button></span></h1>
   <div class="chips" id="chips"></div>
 </header>
 <div id="status">読み込み中…</div>
@@ -87,7 +88,11 @@ async function load(refresh) {
   try {
     const r = await fetch("/api/albums" + (refresh ? "?refresh" : ""));
     if (!r.ok) throw new Error(await r.text());
-    albums = await r.json();
+    const snap = await r.json();
+    albums = snap.albums;
+    const t = new Date(snap.fetchedAt);
+    document.getElementById("fetched").textContent =
+      `${fmtDate(snap.fetchedAt)} ${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")} 時点`;
     render();
   } catch (e) {
     document.getElementById("status").textContent = "取得に失敗しました: " + e.message;

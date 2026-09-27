@@ -1,6 +1,6 @@
 """最近追加したアルバムを、追加日・再生回数付きで iPhone に見せる Web アプリ。
 
-    python3 server.py [--port 8765] [--days 365]
+    python3 server.py [--port 8765] [--days 365] [--interval 3600]
 
 一覧のアルバムをタップすると shortcuts:// で iPhone のショートカット「アルバムを再生」を
 呼び、iPhone の Music アプリで再生させる。Web ページから Music アプリを直接操作する手段は
@@ -8,6 +8,9 @@
 
 アルバムは album 名だけでまとめる。1 枚の中で albumArtist が曲ごとに違うアルバムもあり、
 albumArtist を鍵に含めるとそれが複数枚に割れる。
+
+一覧は --interval ごとに裏で取り直してファイルに置き、要求にはそれをすぐ返す。Music.app への
+問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
 """
 
 import argparse
@@ -16,14 +19,13 @@ import re
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
-CACHE_TTL = 120  # 秒。再生回数は iCloud 経由で遅れて届くので、これ以上短くしても意味が薄い
-
-ART_DIR = Path.home() / "Library/Caches/recent-albums"
+CACHE_DIR = Path.home() / "Library/Caches/recent-albums"
 ART_SIZE = 320  # px。一覧の 96pt x 3 倍 = 288px を少し上回る大きさ
 PID_RE = re.compile(r"[0-9A-F]{16}")
 
@@ -53,7 +55,7 @@ GENRE_EN = {
     "その他": "Other",
 }
 
-_cache: dict[int, tuple[float, list]] = {}
+_snapshots: dict[int, dict] = {}
 _lock = threading.Lock()
 # 画面に入った画像がまとめて要求されるので、osascript が同時に何本も走らないよう絞る
 _art_sem = threading.Semaphore(2)
@@ -97,20 +99,66 @@ def group_albums(tracks: list[dict]) -> list[dict]:
     return albums
 
 
-def get_albums(days: int, refresh: bool) -> list[dict]:
+def snapshot_path(days: int) -> Path:
+    return CACHE_DIR / f"albums-{days}.json"
+
+
+def refresh_snapshot(days: int) -> dict:
+    """Music.app から取り直し、メモリとファイルの両方に置く。"""
     with _lock:
-        hit = _cache.get(days)
-        if hit and not refresh and time.time() - hit[0] < CACHE_TTL:
-            return hit[1]
-        albums = group_albums(fetch_tracks(days))
-        _cache[days] = (time.time(), albums)
-        return albums
+        snap = {
+            "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "albums": group_albums(fetch_tracks(days)),
+        }
+        _snapshots[days] = snap
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = snapshot_path(days).with_suffix(".tmp")
+        tmp.write_text(json.dumps(snap, ensure_ascii=False))
+        tmp.replace(snapshot_path(days))
+        return snap
+
+
+def get_snapshot(days: int, force: bool) -> dict:
+    """手元にある一覧を返す。メモリ → ファイルの順に探し、どちらにも無いときだけ取りに行く。"""
+    if not force:
+        if days in _snapshots:
+            return _snapshots[days]
+        try:
+            _snapshots[days] = json.loads(snapshot_path(days).read_text())
+            return _snapshots[days]
+        except (OSError, ValueError):
+            pass
+    return refresh_snapshot(days)
+
+
+def music_running() -> bool:
+    return subprocess.run(["pgrep", "-xq", "Music"]).returncode == 0
+
+
+def refresher(days: int, interval: int):
+    """一覧とアートワークを定期的に取り直す。
+
+    Music.app が起動していない回は見送る。osascript は Music.app を起動してしまうので、
+    ライブラリのバックアップのように Music.app を止めて行う作業とぶつかりうる。
+    """
+    while True:
+        try:
+            if music_running():
+                snap = refresh_snapshot(days)
+                for a in snap["albums"]:
+                    get_artwork(a["artPid"])
+                print(f"refreshed: {len(snap['albums'])} albums", flush=True)
+            else:
+                print("refresh skipped: Music is not running", flush=True)
+        except Exception as e:  # noqa: BLE001 - 1 回の失敗で定期取得を止めない
+            print(f"refresh failed: {e}", flush=True)
+        time.sleep(interval)
 
 
 def get_artwork(pid: str) -> bytes | None:
     """縮小したアートワークを返す。無ければ None。結果はどちらもディスクに残す。"""
     # サイズをファイル名に含め、ART_SIZE を変えたら取り直す
-    jpg, none = ART_DIR / f"{pid}-{ART_SIZE}.jpg", ART_DIR / f"{pid}.none"
+    jpg, none = CACHE_DIR / f"{pid}-{ART_SIZE}.jpg", CACHE_DIR / f"{pid}.none"
     if jpg.exists():
         return jpg.read_bytes()
     if none.exists():
@@ -118,8 +166,8 @@ def get_artwork(pid: str) -> bytes | None:
     with _art_sem:
         if jpg.exists():
             return jpg.read_bytes()
-        ART_DIR.mkdir(parents=True, exist_ok=True)
-        raw = ART_DIR / f"{pid}.raw"
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        raw = CACHE_DIR / f"{pid}.raw"
         out = subprocess.run(
             ["osascript", str(HERE / "artwork.applescript"), pid, str(raw)],
             capture_output=True, text=True, timeout=30,
@@ -147,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query, keep_blank_values=True)
             days = int(q.get("days", [self.default_days])[0])
             try:
-                body = json.dumps(get_albums(days, "refresh" in q), ensure_ascii=False)
+                body = json.dumps(get_snapshot(days, "refresh" in q), ensure_ascii=False)
                 self._send(200, "application/json; charset=utf-8", body.encode())
             except subprocess.CalledProcessError as e:
                 self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
@@ -176,8 +224,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--days", type=int, default=365)
+    p.add_argument("--interval", type=int, default=3600, help="一覧を取り直す間隔 (秒)")
     a = p.parse_args()
     Handler.default_days = a.days
+    threading.Thread(target=refresher, args=(a.days, a.interval), daemon=True).start()
     print(f"listening on :{a.port}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", a.port), Handler).serve_forever()
 
