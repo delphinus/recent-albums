@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 CACHE_TTL = 120  # 秒。再生回数は iCloud 経由で遅れて届くので、これ以上短くしても意味が薄い
 
 ART_DIR = Path.home() / "Library/Caches/recent-albums"
-ART_SIZE = 240  # px。iPhone の一覧で 60pt 前後 x 3 倍 = 180px を少し上回る大きさ
+ART_SIZE = 320  # px。一覧の 96pt x 3 倍 = 288px を少し上回る大きさ
 PID_RE = re.compile(r"[0-9A-F]{16}")
 
 # Apple Music の日本のストアから入った曲は和名のジャンルが付く。英名に寄せて絞り込みを 1 つにする。
@@ -109,7 +109,8 @@ def get_albums(days: int, refresh: bool) -> list[dict]:
 
 def get_artwork(pid: str) -> bytes | None:
     """縮小したアートワークを返す。無ければ None。結果はどちらもディスクに残す。"""
-    jpg, none = ART_DIR / f"{pid}.jpg", ART_DIR / f"{pid}.none"
+    # サイズをファイル名に含め、ART_SIZE を変えたら取り直す
+    jpg, none = ART_DIR / f"{pid}-{ART_SIZE}.jpg", ART_DIR / f"{pid}.none"
     if jpg.exists():
         return jpg.read_bytes()
     if none.exists():
