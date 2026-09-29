@@ -11,6 +11,8 @@ albumArtist を鍵に含めるとそれが複数枚に割れる。
 
 DJ mix かどうかは、プレイリスト「DJ Mix」に曲が入っているか、アルバム名で判定する。
 ライブラリには DJ mix を示す情報が無く、グループやコメントの欄は既に別の用途で使われているため。
+プレイリストとは曲の persistentID で照らし合わせ、一部の曲だけが入っていれば「一部が mix」とする。
+その mix の部分だけを入れたプレイリスト「<アルバム名> Mix」があれば、それを流す手段も出す。
 
 一覧は --interval ごとに裏で取り直してファイルに置き、要求にはそれをすぐ返す。Music.app への
 問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
@@ -71,7 +73,7 @@ _art_sem = threading.Semaphore(2)
 
 
 def fetch_tracks(days: int) -> dict:
-    """{"tracks": [...], "djMixAlbums": [...]} を返す。"""
+    """{"tracks": [...], "djMixIds": [...], "playlists": [...]} を返す。"""
     out = subprocess.run(
         ["osascript", "-l", "JavaScript", str(HERE / "recent.js"), str(days)],
         capture_output=True, text=True, timeout=60, check=True,
@@ -79,11 +81,15 @@ def fetch_tracks(days: int) -> dict:
     return json.loads(out.stdout)
 
 
-def is_dj_mix(album: str, dj_mix_albums: set[str]) -> bool:
-    return album in dj_mix_albums or bool(DJ_MIX_RE.search(album) and not NOT_DJ_MIX_RE.search(album))
+def dj_mix_kind(album: str, ts: list[dict], dj_mix_ids: set[str]) -> str | None:
+    """"full" (DJ mix)、"part" (一部が mix)、None (DJ mix ではない) のどれかを返す。"""
+    n = sum(t["persistentID"] in dj_mix_ids for t in ts)
+    if n:
+        return "full" if n == len(ts) else "part"
+    return "full" if DJ_MIX_RE.search(album) and not NOT_DJ_MIX_RE.search(album) else None
 
 
-def group_albums(tracks: list[dict], dj_mix_albums: set[str]) -> list[dict]:
+def group_albums(tracks: list[dict], dj_mix_ids: set[str], playlists: set[str]) -> list[dict]:
     by_album: dict[str, list[dict]] = {}
     for t in tracks:
         # 一括取得には出るが個別には引けない (-1728) 実体の無い項目がある。
@@ -95,6 +101,7 @@ def group_albums(tracks: list[dict], dj_mix_albums: set[str]) -> list[dict]:
     for name, ts in by_album.items():
         ts.sort(key=lambda t: (t.get("discNumber") or 0, t.get("trackNumber") or 0))
         played = [t["playedDate"] for t in ts if t.get("playedDate")]
+        kind = dj_mix_kind(name, ts, dj_mix_ids)
         artists = list(dict.fromkeys(t.get("albumArtist") or t.get("artist") or "" for t in ts))
         albums.append({
             "album": name,
@@ -108,7 +115,8 @@ def group_albums(tracks: list[dict], dj_mix_albums: set[str]) -> list[dict]:
             "playsStarted": ts[0].get("playedCount") or 0,
             "playsFinished": ts[-1].get("playedCount") or 0,
             "lastPlayed": max(played) if played else None,
-            "djMix": is_dj_mix(name, dj_mix_albums),
+            "djMix": kind,
+            "mixPlaylist": f"{name} Mix" if kind == "part" and f"{name} Mix" in playlists else None,
         })
     albums.sort(key=lambda a: a["dateAdded"], reverse=True)
     return albums
@@ -124,7 +132,7 @@ def refresh_snapshot(days: int) -> dict:
         fetched = fetch_tracks(days)
         snap = {
             "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "albums": group_albums(fetched["tracks"], set(fetched["djMixAlbums"])),
+            "albums": group_albums(fetched["tracks"], set(fetched["djMixIds"]), set(fetched["playlists"])),
         }
         _snapshots[days] = snap
         CACHE_DIR.mkdir(parents=True, exist_ok=True)

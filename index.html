@@ -19,8 +19,12 @@
           background: none; color: inherit; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   ul { list-style: none; margin: 0; padding: 0; }
-  li a { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
-  li a:active { background: var(--line); }
+  li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+  li a { color: inherit; text-decoration: none; }
+  .row { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; padding: 8px 12px; }
+  .row:active { background: var(--line); }
+  .mix-only { flex: none; margin-right: 12px; border: 1px solid var(--accent); border-radius: 14px; padding: 4px 10px;
+              font-size: 13px; color: var(--accent); }
   .art { flex: none; width: 96px; height: 96px; border-radius: 8px; background: var(--line); object-fit: cover; }
   .info { min-width: 0; }
   .title { font-weight: 600; }
@@ -39,6 +43,7 @@
 <ul id="list"></ul>
 <script>
 const SHORTCUT = "アルバムを再生";
+const PLAYLIST_SHORTCUT = "プレイリストを再生";
 let albums = [], genre = "", state = "", djMixOnly = false;
 
 // 先頭と最終の両方を聴いていれば再生済み、片方だけなら再生途中。先頭を飛ばして最終だけ聴いた場合も再生途中に数える
@@ -51,8 +56,8 @@ const fmtAge = s => {
   return days === 0 ? "今日" : days < 30 ? `${days} 日前` : `${Math.floor(days / 30)} か月前`;
 };
 const fmtDur = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`; };
-const playUrl = a => "shortcuts://run-shortcut?name=" + encodeURIComponent(SHORTCUT)
-  + "&input=text&text=" + encodeURIComponent(a.album);
+const runUrl = (shortcut, text) => "shortcuts://run-shortcut?name=" + encodeURIComponent(shortcut)
+  + "&input=text&text=" + encodeURIComponent(text);
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function chip(label, on, onclick) {
@@ -77,7 +82,7 @@ function render() {
     && (!djMixOnly || a.djMix));
   document.getElementById("status").textContent = shown.length ? "" : "該当するアルバムがありません";
   document.getElementById("list").innerHTML = shown.map(a => `
-    <li><a href="${playUrl(a)}">
+    <li><a class="row" href="${runUrl(SHORTCUT, a.album)}">
       <img class="art" loading="lazy" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
       <div class="info">
       <div class="title">${esc(a.album)}</div>
@@ -91,9 +96,10 @@ function render() {
         }[playState(a)]()}
         ${playState(a) !== "未再生" ? `<span>最終 ${a.lastPlayed ? fmtAge(a.lastPlayed) : "-"}</span>` : ""}
         <span>${a.tracks} 曲 · ${fmtDur(a.duration)}</span>
+        ${a.djMix === "part" ? "<span>一部が mix</span>" : ""}
       </div>
       </div>
-    </a></li>`).join("");
+    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">mix だけ</a>` : ""}</li>`).join("");
 }
 
 async function load(refresh) {

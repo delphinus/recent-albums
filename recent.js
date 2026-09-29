@@ -1,5 +1,5 @@
-// 追加日が過去 N 日以内の曲と、プレイリスト「DJ Mix」に入っている曲のアルバム名を
-// Music.app から取り出し、JSON で標準出力に返す。
+// 追加日が過去 N 日以内の曲、プレイリスト「DJ Mix」に入っている曲の persistentID、
+// プレイリストの名前の一覧を Music.app から取り出し、JSON で標準出力に返す。
 //
 //   osascript -l JavaScript recent.js <days>
 //
@@ -26,7 +26,11 @@ function run(argv) {
     });
     rows.push(o);
   }
-  // プレイリストが無ければ空。アルバム名は重複したまま返し、まとめるのは server.py に任せる
+  // プレイリストが無ければ空
   var mix = music.userPlaylists.whose({ name: DJ_MIX_PLAYLIST })();
-  return JSON.stringify({ tracks: rows, djMixAlbums: mix.length ? mix[0].tracks.album() : [] });
+  return JSON.stringify({
+    tracks: rows,
+    djMixIds: mix.length ? mix[0].tracks.persistentID() : [],
+    playlists: music.userPlaylists.name(),
+  });
 }
