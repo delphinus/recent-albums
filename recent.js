@@ -1,16 +1,19 @@
-// 追加日が過去 N 日以内の曲を Music.app から取り出し、JSON の配列で標準出力に返す。
+// 追加日が過去 N 日以内の曲と、プレイリスト「DJ Mix」に入っている曲のアルバム名を
+// Music.app から取り出し、JSON で標準出力に返す。
 //
 //   osascript -l JavaScript recent.js <days>
 //
 // whose で絞ってからフィールドごとに一括取得する (1 フィールド 1 イベント)。
 // 曲ごとに取るより桁違いに速い。アルバムへのまとめは server.py 側で行う。
+var DJ_MIX_PLAYLIST = "DJ Mix";
 var FIELDS = ["persistentID", "name", "album", "albumArtist", "artist", "genre",
               "trackNumber", "discNumber", "duration", "dateAdded", "playedCount", "playedDate"];
 
 function run(argv) {
   var days = Number(argv[0] || 365);
   var since = new Date(Date.now() - days * 86400e3);
-  var q = Application("Music").libraryPlaylists[0].tracks.whose({ dateAdded: { ">": since } });
+  var music = Application("Music");
+  var q = music.libraryPlaylists[0].tracks.whose({ dateAdded: { ">": since } });
   var cols = {};
   FIELDS.forEach(function (f) { cols[f] = q[f](); });
   var n = cols.persistentID.length, rows = [];
@@ -23,5 +26,7 @@ function run(argv) {
     });
     rows.push(o);
   }
-  return JSON.stringify(rows);
+  // プレイリストが無ければ空。アルバム名は重複したまま返し、まとめるのは server.py に任せる
+  var mix = music.userPlaylists.whose({ name: DJ_MIX_PLAYLIST })();
+  return JSON.stringify({ tracks: rows, djMixAlbums: mix.length ? mix[0].tracks.album() : [] });
 }

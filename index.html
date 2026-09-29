@@ -39,7 +39,7 @@
 <ul id="list"></ul>
 <script>
 const SHORTCUT = "アルバムを再生";
-let albums = [], genre = "", state = "";
+let albums = [], genre = "", state = "", djMixOnly = false;
 
 // 先頭と最終の両方を聴いていれば再生済み、片方だけなら再生途中。先頭を飛ばして最終だけ聴いた場合も再生途中に数える
 const playState = a => a.playsStarted > 0 && a.playsFinished > 0 ? "再生済み"
@@ -68,11 +68,13 @@ function render() {
   // 再生状態は 1 つだけ選べ、選んでいるものをもう一度押すと外れる
   chips.replaceChildren(...["未再生", "再生途中", "再生済み"].map(s =>
     chip(s, state === s, () => { state = state === s ? "" : s; render(); })));
+  chips.append(chip("DJ Mix", djMixOnly, () => { djMixOnly = !djMixOnly; render(); }));
   const genres = [...new Set(albums.map(a => a.genre).filter(Boolean))];
   for (const g of ["", ...genres]) {
     chips.append(chip(g || "すべて", genre === g, () => { genre = g; render(); }));
   }
-  const shown = albums.filter(a => (!genre || a.genre === genre) && (!state || playState(a) === state));
+  const shown = albums.filter(a => (!genre || a.genre === genre) && (!state || playState(a) === state)
+    && (!djMixOnly || a.djMix));
   document.getElementById("status").textContent = shown.length ? "" : "該当するアルバムがありません";
   document.getElementById("list").innerHTML = shown.map(a => `
     <li><a href="${playUrl(a)}">

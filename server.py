@@ -9,6 +9,9 @@
 アルバムは album 名だけでまとめる。1 枚の中で albumArtist が曲ごとに違うアルバムもあり、
 albumArtist を鍵に含めるとそれが複数枚に割れる。
 
+DJ mix かどうかは、プレイリスト「DJ Mix」に曲が入っているか、アルバム名で判定する。
+ライブラリには DJ mix を示す情報が無く、グループやコメントの欄は既に別の用途で使われているため。
+
 一覧は --interval ごとに裏で取り直してファイルに置き、要求にはそれをすぐ返す。Music.app への
 問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
 """
@@ -28,6 +31,12 @@ HERE = Path(__file__).resolve().parent
 CACHE_DIR = Path.home() / "Library/Caches/recent-albums"
 ART_SIZE = 320  # px。一覧の 96pt x 3 倍 = 288px を少し上回る大きさ
 PID_RE = re.compile(r"[0-9A-F]{16}")
+# アルバム名に mix が単語として入っていれば DJ mix とみなす。ただしシングル・EP と、
+# "(Extended Mix)" や "(Bonus Mix Edition)" のような曲や版の名前に入っているものは除く
+DJ_MIX_RE = re.compile(r"(?i)\b(mega)?mix\b|\bmixed by\b")
+NOT_DJ_MIX_RE = re.compile(
+    r"(?i) - (single|ep)$|\((extended|original|radio|club|rave|[^)]*remix|[^)]*edition)[^)]*\)"
+)
 
 # Apple Music の日本のストアから入った曲は和名のジャンルが付く。英名に寄せて絞り込みを 1 つにする。
 # ライブラリの表記はそのままで、表示だけを変える
@@ -61,7 +70,8 @@ _lock = threading.Lock()
 _art_sem = threading.Semaphore(2)
 
 
-def fetch_tracks(days: int) -> list[dict]:
+def fetch_tracks(days: int) -> dict:
+    """{"tracks": [...], "djMixAlbums": [...]} を返す。"""
     out = subprocess.run(
         ["osascript", "-l", "JavaScript", str(HERE / "recent.js"), str(days)],
         capture_output=True, text=True, timeout=60, check=True,
@@ -69,7 +79,11 @@ def fetch_tracks(days: int) -> list[dict]:
     return json.loads(out.stdout)
 
 
-def group_albums(tracks: list[dict]) -> list[dict]:
+def is_dj_mix(album: str, dj_mix_albums: set[str]) -> bool:
+    return album in dj_mix_albums or bool(DJ_MIX_RE.search(album) and not NOT_DJ_MIX_RE.search(album))
+
+
+def group_albums(tracks: list[dict], dj_mix_albums: set[str]) -> list[dict]:
     by_album: dict[str, list[dict]] = {}
     for t in tracks:
         # 一括取得には出るが個別には引けない (-1728) 実体の無い項目がある。
@@ -94,6 +108,7 @@ def group_albums(tracks: list[dict]) -> list[dict]:
             "playsStarted": ts[0].get("playedCount") or 0,
             "playsFinished": ts[-1].get("playedCount") or 0,
             "lastPlayed": max(played) if played else None,
+            "djMix": is_dj_mix(name, dj_mix_albums),
         })
     albums.sort(key=lambda a: a["dateAdded"], reverse=True)
     return albums
@@ -106,9 +121,10 @@ def snapshot_path(days: int) -> Path:
 def refresh_snapshot(days: int) -> dict:
     """Music.app から取り直し、メモリとファイルの両方に置く。"""
     with _lock:
+        fetched = fetch_tracks(days)
         snap = {
             "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "albums": group_albums(fetch_tracks(days)),
+            "albums": group_albums(fetched["tracks"], set(fetched["djMixAlbums"])),
         }
         _snapshots[days] = snap
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
