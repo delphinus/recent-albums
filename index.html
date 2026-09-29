@@ -13,6 +13,13 @@
            background: Canvas; border-bottom: 1px solid var(--line); }
   h1 { font-size: 20px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
   h1 button { font-size: 14px; }
+  .tabs button { font: inherit; background: none; border: none; padding: 0; margin-right: 12px; color: var(--sub); }
+  .tabs button.on { color: inherit; }
+  #q { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 10px; font-size: 16px;
+       border: 1px solid var(--line); border-radius: 8px; background: none; color: inherit; }
+  h2 { font-size: 15px; margin: 0; padding: 12px 12px 4px; color: var(--sub); }
+  .pl-icon { flex: none; width: 48px; height: 48px; border-radius: 8px; background: var(--line);
+             display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--sub); }
   h1 small { font-size: 12px; font-weight: normal; color: var(--sub); }
   .chips { display: flex; gap: 6px; overflow-x: auto; }
   .chip { flex: none; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; font-size: 13px;
@@ -36,21 +43,28 @@
 </head>
 <body>
 <header>
-  <h1>最近のアルバム <span><small id="fetched"></small> <button id="reload">更新</button></span></h1>
+  <h1><span class="tabs" id="tabs"></span> <span><small id="fetched"></small> <button id="reload">更新</button></span></h1>
+  <input id="q" type="search" placeholder="アルバム・プレイリストを検索" autocomplete="off">
   <div class="chips" id="chips"></div>
 </header>
 <div id="status">読み込み中…</div>
-<ul id="list"></ul>
+<div id="list"></div>
 <script>
 const SHORTCUT = "アルバムを再生";
 const PLAYLIST_SHORTCUT = "プレイリストを再生";
+const VIEWS = { recent: "最近のアルバム", playlists: "プレイリスト" };
 let albums = [], genre = "", state = "", djMixOnly = false;
+let view = "recent", playlists = null, results = null, query = "";
 
 // 先頭と最終の両方を聴いていれば再生済み、片方だけなら再生途中。先頭を飛ばして最終だけ聴いた場合も再生途中に数える
 const playState = a => a.playsStarted > 0 && a.playsFinished > 0 ? "再生済み"
   : a.playsStarted > 0 || a.playsFinished > 0 ? "再生途中" : "未再生";
 
-const fmtDate = s => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
+// 検索では何年も前のアルバムも出るので、今年でなければ年も付ける
+const fmtDate = s => {
+  const d = new Date(s), y = d.getFullYear() === new Date().getFullYear() ? "" : `${d.getFullYear()}/`;
+  return `${y}${d.getMonth() + 1}/${d.getDate()}`;
+};
 const fmtAge = s => {
   const days = Math.floor((Date.now() - new Date(s)) / 86400e3);
   return days === 0 ? "今日" : days < 30 ? `${days} 日前` : `${Math.floor(days / 30)} か月前`;
@@ -68,20 +82,8 @@ function chip(label, on, onclick) {
   return b;
 }
 
-function render() {
-  const chips = document.getElementById("chips");
-  // 再生状態は 1 つだけ選べ、選んでいるものをもう一度押すと外れる
-  chips.replaceChildren(...["未再生", "再生途中", "再生済み"].map(s =>
-    chip(s, state === s, () => { state = state === s ? "" : s; render(); })));
-  chips.append(chip("DJ Mix", djMixOnly, () => { djMixOnly = !djMixOnly; render(); }));
-  const genres = [...new Set(albums.map(a => a.genre).filter(Boolean))];
-  for (const g of ["", ...genres]) {
-    chips.append(chip(g || "すべて", genre === g, () => { genre = g; render(); }));
-  }
-  const shown = albums.filter(a => (!genre || a.genre === genre) && (!state || playState(a) === state)
-    && (!djMixOnly || a.djMix));
-  document.getElementById("status").textContent = shown.length ? "" : "該当するアルバムがありません";
-  document.getElementById("list").innerHTML = shown.map(a => `
+function albumRow(a) {
+  return `
     <li><a class="row" href="${runUrl(SHORTCUT, a.album)}">
       <img class="art" loading="lazy" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
       <div class="info">
@@ -99,8 +101,96 @@ function render() {
         ${a.djMix === "part" ? "<span>一部が mix</span>" : ""}
       </div>
       </div>
-    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">mix だけ</a>` : ""}</li>`).join("");
+    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">mix だけ</a>` : ""}</li>`;
 }
+
+function playlistRow(p) {
+  return `
+    <li><a class="row" href="${runUrl(PLAYLIST_SHORTCUT, p.name)}">
+      <div class="pl-icon">♫</div>
+      <div class="info">
+      <div class="title">${esc(p.name)}</div>
+      ${p.folder ? `<div class="meta"><span>${esc(p.folder)}</span></div>` : ""}
+      <div class="meta"><span>${p.tracks} 曲 · ${fmtDur(p.duration)}</span>${p.smart ? "<span>スマート</span>" : ""}</div>
+      </div>
+    </a></li>`;
+}
+
+const section = (title, rows) => rows.length ? `${title ? `<h2>${title}</h2>` : ""}<ul>${rows.join("")}</ul>` : "";
+
+function render() {
+  document.getElementById("tabs").replaceChildren(...Object.entries(VIEWS).map(([k, label]) => {
+    const b = document.createElement("button");
+    b.className = view === k ? "on" : "";
+    b.textContent = label;
+    b.onclick = () => { view = k; if (k === "playlists") loadPlaylists(); render(); };
+    return b;
+  }));
+  const chips = document.getElementById("chips");
+  const list = document.getElementById("list"), status = document.getElementById("status");
+  // 検索中は検索結果だけを出す。絞り込みのチップは最近のアルバムにだけ効く
+  chips.hidden = query !== "" || view !== "recent";
+  if (query) {
+    if (!results) { status.textContent = "検索中…"; list.innerHTML = ""; return; }
+    status.textContent = results.albums.length || results.playlists.length ? "" : "見つかりません";
+    list.innerHTML = section("アルバム", results.albums.map(albumRow))
+      + section("プレイリスト", results.playlists.map(playlistRow));
+    return;
+  }
+  if (view === "playlists") {
+    if (!playlists) { status.textContent = "読み込み中…"; list.innerHTML = ""; return; }
+    status.textContent = "";
+    list.innerHTML = section("", playlists.map(playlistRow));
+    return;
+  }
+  // 再生状態は 1 つだけ選べ、選んでいるものをもう一度押すと外れる
+  chips.replaceChildren(...["未再生", "再生途中", "再生済み"].map(s =>
+    chip(s, state === s, () => { state = state === s ? "" : s; render(); })));
+  chips.append(chip("DJ Mix", djMixOnly, () => { djMixOnly = !djMixOnly; render(); }));
+  const genres = [...new Set(albums.map(a => a.genre).filter(Boolean))];
+  for (const g of ["", ...genres]) {
+    chips.append(chip(g || "すべて", genre === g, () => { genre = g; render(); }));
+  }
+  const shown = albums.filter(a => (!genre || a.genre === genre) && (!state || playState(a) === state)
+    && (!djMixOnly || a.djMix));
+  status.textContent = shown.length ? "" : "該当するアルバムがありません";
+  list.innerHTML = section("", shown.map(albumRow));
+}
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function loadPlaylists() {
+  if (playlists) return;
+  try {
+    playlists = (await getJSON("/api/playlists")).playlists;
+    render();
+  } catch (e) {
+    document.getElementById("status").textContent = "取得に失敗しました: " + e.message;
+  }
+}
+
+// 打つたびに問い合わせないよう、入力が 250ms 止まってから検索する。古い応答は捨てる
+let searchTimer;
+document.getElementById("q").oninput = e => {
+  clearTimeout(searchTimer);
+  query = e.target.value.trim();
+  results = null;
+  render();
+  if (!query) return;
+  const q = query;
+  searchTimer = setTimeout(async () => {
+    try {
+      const r = await getJSON("/api/search?q=" + encodeURIComponent(q));
+      if (q === query) { results = r; render(); }
+    } catch (e) {
+      document.getElementById("status").textContent = "検索に失敗しました: " + e.message;
+    }
+  }, 250);
+};
 
 async function load(refresh) {
   document.getElementById("status").textContent = "読み込み中…";
@@ -118,7 +208,7 @@ async function load(refresh) {
   }
 }
 
-document.getElementById("reload").onclick = () => load(true);
+document.getElementById("reload").onclick = () => { playlists = null; load(true); };
 load(false);
 </script>
 </body>

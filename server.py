@@ -16,6 +16,8 @@ DJ mix かどうかは、プレイリスト「DJ Mix」に曲が入っている�
 
 一覧は --interval ごとに裏で取り直してファイルに置き、要求にはそれをすぐ返す。Music.app への
 問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
+
+検索とプレイリストの一覧のために、ライブラリ全体のアルバムとプレイリストも同じ間隔で取り直しておく。
 """
 
 import argparse
@@ -24,6 +26,7 @@ import re
 import subprocess
 import threading
 import time
+import unicodedata
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -68,6 +71,9 @@ GENRE_EN = {
 
 _snapshots: dict[int, dict] = {}
 _lock = threading.Lock()
+_library: dict | None = None
+_library_lock = threading.Lock()
+SEARCH_LIMIT = 100
 # 画面に入った画像がまとめて要求されるので、osascript が同時に何本も走らないよう絞る
 _art_sem = threading.Semaphore(2)
 
@@ -79,6 +85,22 @@ def fetch_tracks(days: int) -> dict:
         capture_output=True, text=True, timeout=60, check=True,
     )
     return json.loads(out.stdout)
+
+
+def fetch_playlists() -> list[dict]:
+    # 初回は swift のコンパイルが入るので長めに待つ
+    out = subprocess.run(
+        ["swift", str(HERE / "playlists.swift")],
+        capture_output=True, text=True, timeout=180, check=True,
+    )
+    playlists = json.loads(out.stdout)
+    playlists.sort(key=lambda p: (natural_key(p["folder"]), natural_key(p["name"])))
+    return playlists
+
+
+def natural_key(s: str) -> list:
+    """数字を数として比べる並べ替えの鍵。"#11" "#16" "#112" の順になる。"""
+    return [(0, int(x), "") if x.isdigit() else (1, 0, normalize(x)) for x in re.split(r"(\d+)", s) if x]
 
 
 def dj_mix_kind(album: str, ts: list[dict], dj_mix_ids: set[str]) -> str | None:
@@ -155,6 +177,59 @@ def get_snapshot(days: int, force: bool) -> dict:
     return refresh_snapshot(days)
 
 
+def library_path() -> Path:
+    return CACHE_DIR / "library.json"
+
+
+def refresh_library() -> dict:
+    """ライブラリ全体のアルバムとプレイリストを取り直し、メモリとファイルの両方に置く。"""
+    global _library
+    with _library_lock:
+        fetched = fetch_tracks(0)
+        lib = {
+            "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "albums": group_albums(fetched["tracks"], set(fetched["djMixIds"]), set(fetched["playlists"])),
+            "playlists": fetch_playlists(),
+        }
+        _library = lib
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = library_path().with_suffix(".tmp")
+        tmp.write_text(json.dumps(lib, ensure_ascii=False))
+        tmp.replace(library_path())
+        return lib
+
+
+def get_library() -> dict:
+    """手元にあるライブラリ全体の一覧を返す。get_snapshot と同じくメモリ → ファイル → 取得の順。"""
+    global _library
+    if _library is None:
+        try:
+            _library = json.loads(library_path().read_text())
+        except (OSError, ValueError):
+            return refresh_library()
+    return _library
+
+
+def normalize(s: str) -> str:
+    # 全角・半角や大文字・小文字の違いを無視して比べる
+    return unicodedata.normalize("NFKC", s).casefold()
+
+
+def search(q: str) -> dict:
+    """空白で区切った語をすべて含むアルバム (名前・アーティスト) とプレイリスト (名前・フォルダ) を返す。"""
+    terms = normalize(q).split()
+    lib = get_library()
+
+    def hit(*fields: str) -> bool:
+        s = normalize(" ".join(fields))
+        return all(t in s for t in terms)
+
+    return {
+        "albums": [a for a in lib["albums"] if hit(a["album"], a["artist"])][:SEARCH_LIMIT],
+        "playlists": [p for p in lib["playlists"] if hit(p["name"], p["folder"])][:SEARCH_LIMIT],
+    }
+
+
 def music_running() -> bool:
     return subprocess.run(["pgrep", "-xq", "Music"]).returncode == 0
 
@@ -172,6 +247,9 @@ def refresher(days: int, interval: int):
                 for a in snap["albums"]:
                     get_artwork(a["artPid"])
                 print(f"refreshed: {len(snap['albums'])} albums", flush=True)
+                lib = refresh_library()
+                print(f"library refreshed: {len(lib['albums'])} albums, {len(lib['playlists'])} playlists",
+                      flush=True)
             else:
                 print("refresh skipped: Music is not running", flush=True)
         except Exception as e:  # noqa: BLE001 - 1 回の失敗で定期取得を止めない
@@ -221,6 +299,20 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body = json.dumps(get_snapshot(days, "refresh" in q), ensure_ascii=False)
                 self._send(200, "application/json; charset=utf-8", body.encode())
+            except subprocess.CalledProcessError as e:
+                self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
+                return
+            if "refresh" in q:
+                # 検索用の一覧も取り直す。十数秒掛かるので、応答は待たせない
+                threading.Thread(target=refresh_library, daemon=True).start()
+        elif u.path in ("/api/search", "/api/playlists"):
+            try:
+                if u.path == "/api/search":
+                    body = search(parse_qs(u.query).get("q", [""])[0])
+                else:
+                    lib = get_library()
+                    body = {"fetchedAt": lib["fetchedAt"], "playlists": lib["playlists"]}
+                self._send(200, "application/json; charset=utf-8", json.dumps(body, ensure_ascii=False).encode())
             except subprocess.CalledProcessError as e:
                 self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
         elif u.path.startswith("/art/") and PID_RE.fullmatch(u.path[5:]):
