@@ -13,7 +13,8 @@
            background: Canvas; border-bottom: 1px solid var(--line); }
   h1 { font-size: 20px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
   h1 button { font-size: 14px; }
-  .tabs button { font: inherit; background: none; border: none; padding: 0; margin-right: 12px; color: var(--sub); }
+  h1 > span { white-space: nowrap; }
+  .tabs button { font: inherit; font-size: 17px; background: none; border: none; padding: 0; margin-right: 10px; color: var(--sub); }
   .tabs button.on { color: inherit; }
   #q { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 10px; font-size: 16px;
        border: 1px solid var(--line); border-radius: 8px; background: none; color: inherit; }
@@ -39,6 +40,21 @@
   .unplayed { color: var(--accent); font-weight: 600; }
   .partial { color: #ff9f0a; font-weight: 600; }
   #status { padding: 16px 12px; color: var(--sub); }
+  .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 12px; padding: 12px; }
+  .folder { position: relative; font-size: 12px; text-align: center; }
+  .folder a { color: inherit; text-decoration: none; }
+  .icon { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px; aspect-ratio: 1; box-sizing: border-box;
+          border-radius: 18px; background: var(--line); }
+  .icon img { width: 100%; aspect-ratio: 1; border-radius: 5px; object-fit: cover; background: var(--line); }
+  .row .icon { flex: none; width: 96px; }
+  .folder .name { margin-top: 4px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .folder .count { color: var(--sub); }
+  .shuffle { position: absolute; top: -6px; right: -6px; width: 32px; height: 32px; padding: 0; border: none;
+             border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .series-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .series-head h2 { flex: 1; min-width: 0; padding: 0; color: inherit; }
+  .series-head button { flex: none; font-size: 14px; }
+  .series-head .random { border: 1px solid var(--accent); border-radius: 14px; padding: 4px 10px; background: none; color: var(--accent); }
 </style>
 </head>
 <body>
@@ -52,9 +68,12 @@
 <script>
 const SHORTCUT = "アルバムを再生";
 const PLAYLIST_SHORTCUT = "プレイリストを再生";
-const VIEWS = { recent: "最近のアルバム", playlists: "プレイリスト" };
+// iPhone の幅に 3 つと「更新」が 1 行に収まるよう、短い名前にしている
+const VIEWS = { recent: "最近", series: "シリーズ", playlists: "プレイリスト" };
 let albums = [], genre = "", state = "", djMixOnly = false;
-let view = "recent", playlists = null, results = null, query = "";
+let view = "recent", playlists = null, series = null, openSeries = "", results = null, query = "";
+const SHUFFLE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" '
+  + 'stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
 
 // 先頭と最終の両方を聴いていれば再生済み、片方だけなら再生途中。先頭を飛ばして最終だけ聴いた場合も再生途中に数える
 const playState = a => a.playsStarted > 0 && a.playsFinished > 0 ? "再生済み"
@@ -116,6 +135,28 @@ function playlistRow(p) {
     </a></li>`;
 }
 
+// シリーズのアイコンは、新しい 4 枚のアートワークを 2x2 に並べたフォルダにする
+const seriesIcon = s => `<div class="icon">${s.artPids.map(pid =>
+  `<img loading="lazy" src="/art/${pid}" alt="" onerror="this.removeAttribute('src')">`).join("")}</div>`;
+
+function seriesFolder(s) {
+  return `
+    <div class="folder">
+      <a href="#" data-open="${esc(s.name)}">${seriesIcon(s)}
+        <div class="name">${esc(s.name)}</div><div class="count">${s.albums.length} 枚</div></a>
+      <button class="shuffle" data-random="${esc(s.name)}" aria-label="ランダムに再生">${SHUFFLE_SVG}</button>
+    </div>`;
+}
+
+// 検索結果では series の一覧がまだ無いこともあるので、件数は検索の応答に入っているものを使う
+function seriesRow(s) {
+  return `
+    <li><a class="row" href="#" data-open="${esc(s.name)}">${seriesIcon(s)}
+      <div class="info"><div class="title">${esc(s.name)}</div>
+      <div class="meta"><span>シリーズ · ${s.count} 枚</span></div></div>
+    </a></li>`;
+}
+
 const section = (title, rows) => rows.length ? `${title ? `<h2>${title}</h2>` : ""}<ul>${rows.join("")}</ul>` : "";
 
 function render() {
@@ -123,7 +164,7 @@ function render() {
     const b = document.createElement("button");
     b.className = view === k ? "on" : "";
     b.textContent = label;
-    b.onclick = () => { view = k; if (k === "playlists") loadPlaylists(); render(); };
+    b.onclick = () => { view = k; openSeries = ""; render(); };
     return b;
   }));
   const chips = document.getElementById("chips");
@@ -132,13 +173,29 @@ function render() {
   chips.hidden = query !== "" || view !== "recent";
   if (query) {
     if (!results) { status.textContent = "検索中…"; list.innerHTML = ""; return; }
-    status.textContent = results.albums.length || results.playlists.length ? "" : "見つかりません";
-    list.innerHTML = section("アルバム", results.albums.map(albumRow))
+    status.textContent = results.albums.length || results.series.length || results.playlists.length ? "" : "見つかりません";
+    list.innerHTML = section("シリーズ", results.series.map(seriesRow))
+      + section("アルバム", results.albums.map(albumRow))
       + section("プレイリスト", results.playlists.map(playlistRow));
     return;
   }
+  if (view === "series") {
+    if (!series) { status.textContent = "読み込み中…"; list.innerHTML = ""; loadSeries(); return; }
+    const s = openSeries && series.find(s => s.name === openSeries);
+    if (s) {
+      status.textContent = "";
+      list.innerHTML = `
+        <div class="series-head"><button data-back>‹ 戻る</button><h2>${esc(s.name)}</h2>
+          <button class="random" data-random="${esc(s.name)}">ランダムに再生</button></div>`
+        + section("", s.albums.map(albumRow));
+      return;
+    }
+    status.textContent = series.length ? "" : "シリーズがありません";
+    list.innerHTML = `<div class="folders">${series.map(seriesFolder).join("")}</div>`;
+    return;
+  }
   if (view === "playlists") {
-    if (!playlists) { status.textContent = "読み込み中…"; list.innerHTML = ""; return; }
+    if (!playlists) { status.textContent = "読み込み中…"; list.innerHTML = ""; loadPlaylists(); return; }
     status.textContent = "";
     list.innerHTML = section("", playlists.map(playlistRow));
     return;
@@ -163,15 +220,44 @@ async function getJSON(url) {
   return r.json();
 }
 
-async function loadPlaylists() {
-  if (playlists) return;
+// render から呼ぶので、取得中にもう一度呼ばれても問い合わせは 1 本にする
+const loading = {};
+async function loadOnce(name, url, set) {
+  if (loading[name]) return;
+  loading[name] = true;
   try {
-    playlists = (await getJSON("/api/playlists")).playlists;
+    set(await getJSON(url));
     render();
   } catch (e) {
     document.getElementById("status").textContent = "取得に失敗しました: " + e.message;
+  } finally {
+    loading[name] = false;
   }
 }
+const loadPlaylists = () => loadOnce("playlists", "/api/playlists", r => { playlists = r.playlists; });
+const loadSeries = () => loadOnce("series", "/api/series", r => { series = r.series; });
+
+function playRandom(name) {
+  const s = series?.find(s => s.name === name);
+  if (s) location.href = runUrl(SHORTCUT, s.albums[Math.floor(Math.random() * s.albums.length)].album);
+}
+
+// シリーズを開く・戻る・ランダムに再生する。行は innerHTML で作り直すので、まとめてここで受ける
+document.getElementById("list").onclick = e => {
+  const t = e.target.closest("[data-open], [data-random], [data-back]");
+  if (!t) return;
+  e.preventDefault();
+  if ("random" in t.dataset) return playRandom(t.dataset.random);
+  openSeries = t.dataset.open ?? "";
+  if (openSeries && query) {
+    // 検索結果から開いたときは検索を閉じる
+    query = "";
+    document.getElementById("q").value = "";
+  }
+  if (openSeries) view = "series";
+  render();
+  window.scrollTo(0, 0);
+};
 
 // 打つたびに問い合わせないよう、入力が 250ms 止まってから検索する。古い応答は捨てる
 let searchTimer;
@@ -208,7 +294,7 @@ async function load(refresh) {
   }
 }
 
-document.getElementById("reload").onclick = () => { playlists = null; load(true); };
+document.getElementById("reload").onclick = () => { playlists = null; series = null; load(true); };
 load(false);
 </script>
 </body>

@@ -18,6 +18,9 @@ DJ mix かどうかは、プレイリスト「DJ Mix」に曲が入っている�
 問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
 
 検索とプレイリストの一覧のために、ライブラリ全体のアルバムとプレイリストも同じ間隔で取り直しておく。
+
+シリーズは、アルバム名の番号より前の部分が同じアルバムが SERIES_MIN 枚以上あるものとみなす。
+ライブラリにはシリーズを示す情報が無く、"Otographic Arts 029" のように名前に番号を振る形がほとんどのため。
 """
 
 import argparse
@@ -42,6 +45,14 @@ DJ_MIX_RE = re.compile(r"(?i)\b(mega)?mix\b|\bmixed by\b")
 NOT_DJ_MIX_RE = re.compile(
     r"(?i) - (single|ep)$|\((extended|original|radio|club|rave|[^)]*remix|[^)]*edition)[^)]*\)"
 )
+
+# シリーズの番号。"#45" "5th" "Vol. 3" の 3 などを拾い、"R4" や "Trance4nations" の 4 は拾わない
+SERIES_NUM_RE = re.compile(r"(?<![\w.])#?(\d+)(?:st|nd|rd|th)?\b")
+# 番号の前に付く "Volume" "Episode" や区切りの記号は、シリーズ名に含めない
+SERIES_TAIL_RE = re.compile(
+    r"(?i)[\s,:\-–#(\[]*\b(?:vol(?:ume)?|episode|ep|pt|part|chapter|no|disc|cd)\.?[\s,:\-–#(\[]*$|[\s,:\-–#(\[]+$"
+)
+SERIES_MIN = 3
 
 # Apple Music の日本のストアから入った曲は和名のジャンルが付く。英名に寄せて絞り込みを 1 つにする。
 # ライブラリの表記はそのままで、表示だけを変える
@@ -144,6 +155,45 @@ def group_albums(tracks: list[dict], dj_mix_ids: set[str], playlists: set[str]) 
     return albums
 
 
+def series_key(album: str) -> tuple[str, int] | None:
+    """アルバム名からシリーズ名と番号を取り出す。番号が無ければ None。"""
+    name = re.sub(r"(?i) - (single|ep)$", "", album)
+    m = SERIES_NUM_RE.search(name)
+    if not m or m.start() == 0:
+        return None
+    # "Asot 893 - A State of Trance Episode 893" のように略称の後ろに正式な名前が続くものは、後ろで数える
+    rest = name[m.end():]
+    if rest.startswith(" - ") and m.group(1) in rest and (k := series_key(rest[3:])):
+        return k
+    prefix = SERIES_TAIL_RE.sub("", name[:m.start()]).strip()
+    return (prefix, int(m.group(1))) if len(prefix) >= 3 else None
+
+
+def list_series() -> list[dict]:
+    """ライブラリ全体のアルバムをシリーズにまとめる。シリーズは新しく追加したもの順、中は番号の昇順。"""
+    groups: dict[str, list[tuple[int, dict]]] = {}
+    names: dict[str, str] = {}
+    # 新しいものから見るので、シリーズ名の表記は最も新しいアルバムのものになる
+    for a in sorted(get_library()["albums"], key=lambda a: a["dateAdded"], reverse=True):
+        if k := series_key(a["album"]):
+            key = normalize(k[0])
+            groups.setdefault(key, []).append((k[1], a))
+            names.setdefault(key, k[0])
+    series = []
+    for key, items in groups.items():
+        if len(items) < SERIES_MIN:
+            continue
+        series.append({
+            "name": names[key],
+            "dateAdded": items[0][1]["dateAdded"],
+            # アイコンには新しい 4 枚を並べる
+            "artPids": [a["artPid"] for _, a in items[:4]],
+            "albums": [a for _, a in sorted(items, key=lambda x: (x[0], natural_key(x[1]["album"])))],
+        })
+    series.sort(key=lambda s: s["dateAdded"], reverse=True)
+    return series
+
+
 def snapshot_path(days: int) -> Path:
     return CACHE_DIR / f"albums-{days}.json"
 
@@ -216,7 +266,7 @@ def normalize(s: str) -> str:
 
 
 def search(q: str) -> dict:
-    """空白で区切った語をすべて含むアルバム (名前・アーティスト) とプレイリスト (名前・フォルダ) を返す。"""
+    """空白で区切った語をすべて含むアルバム (名前・アーティスト)、シリーズ (名前)、プレイリスト (名前・フォルダ) を返す。"""
     terms = normalize(q).split()
     lib = get_library()
 
@@ -226,6 +276,8 @@ def search(q: str) -> dict:
 
     return {
         "albums": [a for a in lib["albums"] if hit(a["album"], a["artist"])][:SEARCH_LIMIT],
+        "series": [{k: v for k, v in s.items() if k != "albums"} | {"count": len(s["albums"])}
+                   for s in list_series() if hit(s["name"])],
         "playlists": [p for p in lib["playlists"] if hit(p["name"], p["folder"])][:SEARCH_LIMIT],
     }
 
@@ -250,6 +302,9 @@ def refresher(days: int, interval: int):
                 lib = refresh_library()
                 print(f"library refreshed: {len(lib['albums'])} albums, {len(lib['playlists'])} playlists",
                       flush=True)
+                for s in list_series():
+                    for pid in s["artPids"]:
+                        get_artwork(pid)
             else:
                 print("refresh skipped: Music is not running", flush=True)
         except Exception as e:  # noqa: BLE001 - 1 回の失敗で定期取得を止めない
@@ -305,10 +360,12 @@ class Handler(BaseHTTPRequestHandler):
             if "refresh" in q:
                 # 検索用の一覧も取り直す。十数秒掛かるので、応答は待たせない
                 threading.Thread(target=refresh_library, daemon=True).start()
-        elif u.path in ("/api/search", "/api/playlists"):
+        elif u.path in ("/api/search", "/api/playlists", "/api/series"):
             try:
                 if u.path == "/api/search":
                     body = search(parse_qs(u.query).get("q", [""])[0])
+                elif u.path == "/api/series":
+                    body = {"fetchedAt": get_library()["fetchedAt"], "series": list_series()}
                 else:
                     lib = get_library()
                     body = {"fetchedAt": lib["fetchedAt"], "playlists": lib["playlists"]}
