@@ -149,7 +149,8 @@ def group_albums(tracks: list[dict], dj_mix_ids: set[str], playlists: set[str]) 
             "playsFinished": ts[-1].get("playedCount") or 0,
             "lastPlayed": max(played) if played else None,
             "djMix": kind,
-            "mixPlaylist": f"{name} Mix" if kind == "part" and f"{name} Mix" in playlists else None,
+            # 一部が mix のアルバムなら mix の部分、ゲスト回の放送のように全体が mix なら流したいパート
+            "mixPlaylist": f"{name} Mix" if kind and f"{name} Mix" in playlists else None,
         })
     albums.sort(key=lambda a: a["dateAdded"], reverse=True)
     return albums

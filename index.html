@@ -120,7 +120,7 @@ function albumRow(a) {
         ${a.djMix === "part" ? "<span>一部が mix</span>" : ""}
       </div>
       </div>
-    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">mix だけ</a>` : ""}</li>`;
+    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">${a.djMix === "part" ? "mix だけ" : "一部だけ"}</a>` : ""}</li>`;
 }
 
 function playlistRow(p) {
@@ -237,9 +237,12 @@ async function loadOnce(name, url, set) {
 const loadPlaylists = () => loadOnce("playlists", "/api/playlists", r => { playlists = r.playlists; });
 const loadSeries = () => loadOnce("series", "/api/series", r => { series = r.series; });
 
+// 選んだアルバムに「<アルバム名> Mix」のプレイリストがあれば、そちらを流す
 function playRandom(name) {
   const s = series?.find(s => s.name === name);
-  if (s) location.href = runUrl(SHORTCUT, s.albums[Math.floor(Math.random() * s.albums.length)].album);
+  if (!s) return;
+  const a = s.albums[Math.floor(Math.random() * s.albums.length)];
+  location.href = a.mixPlaylist ? runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist) : runUrl(SHORTCUT, a.album);
 }
 
 // シリーズを開く・戻る・ランダムに再生する。行は innerHTML で作り直すので、まとめてここで受ける
