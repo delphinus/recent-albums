@@ -38,6 +38,13 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = Path.home() / "Library/Caches/recent-albums"
 ART_SIZE = 320  # px。一覧の 96pt x 3 倍 = 288px を少し上回る大きさ
+# アイコン。iPhone のホーム画面は SVG を使えないので PNG も置く。/favicon.ico は
+# <link rel="icon"> を見ずに取りに来るブラウザ向けで、PNG を返しても表示される
+ICONS = {
+    "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/favicon.ico": ("apple-touch-icon.png", "image/png"),
+}
 PID_RE = re.compile(r"[0-9A-F]{16}")
 # アルバム名に mix が単語として入っていれば DJ mix とみなす。ただしシングル・EP と、
 # "(Extended Mix)" や "(Bonus Mix Edition)" のような曲や版の名前に入っているものは除く
@@ -348,6 +355,9 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", (HERE / "index.html").read_bytes())
+        elif u.path in ICONS:
+            name, ctype = ICONS[u.path]
+            self._send(200, ctype, (HERE / name).read_bytes(), cache="max-age=86400")
         elif u.path == "/api/albums":
             # keep_blank_values が無いと、値の無い ?refresh が捨てられる
             q = parse_qs(u.query, keep_blank_values=True)
