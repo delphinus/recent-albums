@@ -9,79 +9,105 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>リプレイ</title>
 <style>
-  :root { color-scheme: light dark; --sub: #8e8e93; --line: rgba(128,128,128,.22); --pill: #fbe3a6; --pill-text: #3a2a00; }
+  /* 文字の大きさは music.apple.com のリプレイ (PC の Safari) に合わせている */
+  :root { color-scheme: light dark; --sub: #8e8e93; --line: rgba(128,128,128,.22); --pill: #fbe3a6; --pill-text: #3a2a00;
+          --pad: 20px; --gap: 14px; }
   @media (prefers-color-scheme: dark) { :root { --pill: #5a4313; --pill-text: #ffe7ad; } }
+  @media (min-width: 700px) { :root { --pad: 40px; --gap: 20px; } }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 16px -apple-system, system-ui, sans-serif; background: Canvas; overflow-x: hidden;
-         padding-bottom: calc(env(safe-area-inset-bottom) + 96px); }
+  body { margin: 0; font: 15px -apple-system, system-ui, sans-serif; background: Canvas; overflow-x: hidden;
+         padding-bottom: calc(env(safe-area-inset-bottom) + 90px); }
+  main { max-width: 1180px; margin: 0 auto; }
   a { color: inherit; text-decoration: none; }
-  .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; height: 52px;
+  .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; height: 48px;
          padding: env(safe-area-inset-top) 16px 0; background: color-mix(in srgb, Canvas 85%, transparent);
          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--line); }
-  .bar a { font-size: 28px; line-height: 1; width: 40px; color: var(--sub); }
-  .bar span { flex: 1; text-align: center; font-weight: 700; font-size: 17px; margin-right: 40px; }
-  .hero { position: relative; padding: 36px 24px 0; }
+  .bar a { font-size: 26px; line-height: 1; width: 40px; color: var(--sub); }
+  .bar span { flex: 1; text-align: center; font-weight: 700; font-size: 15px; margin-right: 40px; }
+  .hero { position: relative; padding: 28px var(--pad) 0; }
   /* 右上のぼかし。月ごとに色相を少しずつ変える */
-  .glow { position: absolute; z-index: -1; top: -40px; right: -90px; width: 360px; height: 380px; border-radius: 50%;
+  .glow { position: absolute; z-index: -1; top: -60px; right: -80px; width: min(70vw, 620px); height: 460px; border-radius: 50%;
           background: radial-gradient(circle at 60% 40%, hsl(var(--h) 95% 58%), hsl(calc(var(--h) + 18) 95% 70% / .7) 45%, transparent 70%);
-          filter: blur(30px); opacity: .9; pointer-events: none; }
+          filter: blur(34px); opacity: .9; pointer-events: none; }
   .head { display: flex; align-items: center; gap: 12px; }
-  h1 { flex: 1; margin: 0; font-size: 44px; font-weight: 800; letter-spacing: -.02em; }
-  .year { appearance: none; -webkit-appearance: none; border: none; border-radius: 999px; padding: 10px 40px 10px 20px;
-          font: 700 22px -apple-system, system-ui, sans-serif; background: var(--pill) no-repeat right 16px center / 14px
+  h1 { flex: 1; margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -.01em; }
+  .year { appearance: none; -webkit-appearance: none; border: none; border-radius: 999px; padding: 8px 34px 8px 16px;
+          font: 700 17px -apple-system, system-ui, sans-serif; background: var(--pill) no-repeat right 13px center / 12px
           url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%23705000' stroke-width='2.2'/%3E%3C/svg%3E");
           color: var(--pill-text); }
-  .months { display: flex; gap: 6px; margin: 44px -24px 0; padding: 0 24px; overflow-x: auto; scrollbar-width: none; }
+  .months { display: flex; gap: 4px 30px; margin: 40px calc(-1 * var(--pad)) 0; padding: 0 var(--pad); overflow-x: auto; scrollbar-width: none; }
   .months::-webkit-scrollbar, .hscroll::-webkit-scrollbar { display: none; }
-  .months a { flex: none; padding: 6px 10px; font-size: 20px; font-weight: 700; color: var(--sub); }
+  .months a { flex: none; padding: 4px 0; font-size: 17px; font-weight: 700; color: var(--sub); }
   .months a.on { color: CanvasText; }
   .months a.none { opacity: .35; pointer-events: none; }
-  .lead { margin: 120px 0 0; font-size: 44px; line-height: 1.25; font-weight: 800; color: var(--sub); letter-spacing: -.01em; }
+  .lead { margin: 110px 0 0; font-size: 34px; line-height: 1.3; font-weight: 800; color: var(--sub); }
   .lead b { color: CanvasText; }
-  .period { margin: 10px 0 0; font-size: 13px; color: var(--sub); }
-  h2 { margin: 72px 24px 16px; font-size: 21px; font-weight: 700; }
-  h2::after { content: " ›"; color: var(--sub); }
-  .hscroll { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 24px 8px;
-             scroll-padding: 0 24px; scrollbar-width: none; }
+  .period { margin: 8px 0 0; font-size: 12px; color: var(--sub); }
+  h2 { margin: 64px var(--pad) 12px; font-size: 17px; font-weight: 700; }
+  h2.more::after { content: " ›"; color: var(--sub); }
+  .hscroll { display: flex; gap: var(--gap); overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 var(--pad) 8px;
+             scroll-padding: 0 var(--pad); scrollbar-width: none; }
   .hscroll > * { scroll-snap-align: start; flex: none; }
-  .artist { width: 70%; max-width: 320px; border-radius: 22px; padding: 20px 20px 22px; color: #fff; background: #2a2a3a;
+  /* 広い画面ではアーティスト 3 枚・アルバム 4 枚・曲 2 列が 1 画面に収まる */
+  .artist { width: 72%; border-radius: 14px; padding: 14px 16px 18px; color: #fff; background: #2a2a3a;
             text-align: center; transition: background .4s; }
-  .artist .rank { text-align: left; font-size: 60px; font-weight: 700; line-height: 1; }
-  .artist img { width: 78%; aspect-ratio: 1; margin: 12px auto 18px; display: block; border-radius: 14px; object-fit: cover;
+  .album { width: 42%; }
+  @media (min-width: 700px) {
+    .artist { width: calc((100% - 2 * var(--gap)) / 3); }
+    .album { width: calc((100% - 3 * var(--gap)) / 4); }
+  }
+  .artist .rank { text-align: left; font-size: 44px; font-weight: 700; line-height: 1; }
+  .artist img { width: 70%; aspect-ratio: 1; margin: 22px auto 22px; display: block; border-radius: 12px; object-fit: cover;
                 background: rgba(255,255,255,.1); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
-  .artist .name { font-size: 22px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .artist .min { margin-top: 4px; font-size: 18px; opacity: .8; }
+  .artist .name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .artist .min { margin-top: 2px; font-size: 13px; opacity: .8; }
   /* トップソングは 4 曲ずつの列を横に並べる */
-  .songs { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-auto-columns: 84%;
-           column-gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 24px; scroll-padding: 0 24px;
+  .songs { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-auto-columns: 86%;
+           column-gap: var(--gap); overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 var(--pad); scroll-padding: 0 var(--pad);
            scrollbar-width: none; }
+  @media (min-width: 700px) { .songs { grid-auto-columns: calc((100% - var(--gap)) / 2); } }
   .songs::-webkit-scrollbar { display: none; }
-  .song { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .song { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0; }
   .song:nth-child(4n+1) { scroll-snap-align: start; }
-  .song img { flex: none; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: var(--line); }
-  .song .rank { flex: none; width: 1.6em; text-align: center; font-size: 20px; font-weight: 500; }
+  .song img { flex: none; width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--line); }
+  .song .rank { flex: none; width: 1.4em; text-align: center; font-size: 13px; font-weight: 500; align-self: flex-start; padding-top: 2px; }
   .song .t { min-width: 0; }
   .song .title, .song .sub, .album .title, .album .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .song .title { font-size: 20px; font-weight: 500; }
-  .song .sub { font-size: 18px; color: var(--sub); margin-top: 2px; }
-  .album { width: 42%; max-width: 220px; }
-  .album img { width: 100%; aspect-ratio: 1; border-radius: 10px; object-fit: cover; background: var(--line);
+  .song .title { font-size: 13px; font-weight: 500; }
+  .song .sub { font-size: 13px; color: var(--sub); margin-top: 1px; }
+  .album img { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; background: var(--line);
                box-shadow: 0 2px 10px rgba(0,0,0,.12); }
-  .album .rank { margin-top: 8px; font-size: 24px; font-weight: 700; }
-  .album .title { font-size: 18px; font-weight: 600; }
-  .album .sub { font-size: 17px; color: var(--sub); }
-  .note { margin: 56px 24px 0; font-size: 12px; color: var(--sub); line-height: 1.6; }
+  .album .rank { margin-top: 6px; font-size: 17px; font-weight: 700; }
+  .album .title { font-size: 13px; font-weight: 600; }
+  .album .sub { font-size: 12px; color: var(--sub); }
+  /* 年間のリプレイ。押すとその年のプレイリストを流す */
+  .yearcard { position: relative; display: block; margin: 0 var(--pad); aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden;
+              color: #fff; background: linear-gradient(160deg, #f4b73f 0%, #f39a3b 38%, #ec6a3f 62%, #a9532a 100%);
+              box-shadow: 0 10px 40px rgba(240,140,40,.35); }
+  @media (min-width: 700px) { .yearcard { aspect-ratio: 2.35 / 1; } }
+  .yearcard::before { content: ""; position: absolute; inset: 35% -10% auto -10%; height: 40%; border-radius: 50%;
+                      background: radial-gradient(ellipse, rgba(255,90,60,.55), transparent 70%); filter: blur(20px); }
+  .yearcard .label { position: absolute; left: 7%; top: 12%; font-size: clamp(36px, 7vw, 56px); font-weight: 700; letter-spacing: -.02em; }
+  .yearcard .yy { position: absolute; right: 6%; bottom: 14%; font-size: clamp(130px, 26vw, 260px); font-weight: 500; line-height: .8;
+                  letter-spacing: -.04em; color: rgba(255,255,255,.88); }
+  .yearcard .who { position: absolute; left: 8%; right: 8%; bottom: 7%; text-align: center; font-size: 15px; line-height: 1.5;
+                   text-shadow: 0 1px 6px rgba(0,0,0,.25); }
+  .yearcard .go { position: absolute; right: 4%; top: 9%; width: 52px; height: 52px; border-radius: 50%; display: flex;
+                  align-items: center; justify-content: center; background: rgba(255,255,255,.9); color: #e0612f; font-size: 22px; }
+  .yearmeta { margin: 8px var(--pad) 0; font-size: 12px; color: var(--sub); }
+  .note { margin: 48px var(--pad) 0; font-size: 12px; color: var(--sub); line-height: 1.6; }
   /* 下に浮かぶ再生ボタン。Apple Music のミニプレーヤーの位置 */
-  .player { position: fixed; z-index: 3; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 16px);
-            display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; border-radius: 999px;
+  .player { position: fixed; z-index: 3; left: 50%; transform: translateX(-50%); width: min(calc(100% - 32px), 640px);
+            bottom: calc(env(safe-area-inset-bottom) + 14px);
+            display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 8px; border-radius: 999px;
             background: color-mix(in srgb, Canvas 80%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
             box-shadow: 0 6px 24px rgba(0,0,0,.15); border: 1px solid var(--line); }
-  .player img { flex: none; width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: var(--line); }
+  .player img { flex: none; width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: var(--line); }
   .player .t { flex: 1; min-width: 0; }
-  .player .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .player .sub { font-size: 13px; color: var(--sub); }
-  .player .play { flex: none; font-size: 30px; line-height: 1; padding: 0 6px; }
-  #status { padding: 40px 24px; color: var(--sub); }
+  .player .title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player .sub { font-size: 12px; color: var(--sub); }
+  .player .play { flex: none; font-size: 24px; line-height: 1; padding: 0 6px; }
+  #status { padding: 40px var(--pad); color: var(--sub); }
 </style>
 </head>
 <body>
@@ -121,7 +147,19 @@ function tint(img) {
   } catch (e) { /* 色が取れなければ既定の色のまま */ }
 }
 
-function render(months, t) {
+function yearCard(y) {
+  if (!y || !y.tracks.length) return "";
+  const who = y.artists.slice(0, 8).map(a => esc(a.name)).join("、");
+  return `
+    <h2>あなたの${y.year}年のトップソングをリプレイ</h2>
+    <a class="yearcard" href="${runUrl(PLAYLIST_SHORTCUT, y.name)}" aria-label="${esc(y.name)} を再生">
+      <span class="label">Replay</span><span class="go">▶</span>
+      <span class="yy">’${y.year.slice(2)}</span>
+      <span class="who">${who}など</span></a>
+    <p class="yearmeta">${esc(y.name)} · ${y.tracks.length} 曲 · ${range(y)} に ${num(y.minutes)} 分</p>`;
+}
+
+function render(months, t, y) {
   const year = t.month.slice(0, 4), m = +t.month.slice(5);
   const have = new Set(months.map(x => x.month));
   const years = [...new Set(months.map(x => x.month.slice(0, 4)))];
@@ -136,22 +174,23 @@ function render(months, t) {
         const k = `${year}-${String(i + 1).padStart(2, "0")}`;
         return `<a href="?month=${k}" class="${k === t.month ? "on" : have.has(k) ? "" : "none"}">${i + 1}月</a>`;
       }).join("")}</nav>
-      <p class="lead">${m}月に <b>${num(t.minutes)}<br>分間</b> 聴きました。</p>
+      <p class="lead">${m}月に <b>${num(t.minutes)}<wbr>分間</b> <span style="white-space:nowrap">聴きました。</span></p>
       <p class="period">${range(t)} の再生回数から集計 · ${num(t.songs)} 曲</p>
     </section>
-    <h2>あなたのトップアーティスト</h2>
+    <h2 class="more">あなたのトップアーティスト</h2>
     <div class="hscroll">${t.artists.map((a, i) => `
       <div class="artist"><div class="rank">${i + 1}</div>
         <img loading="lazy" src="/art/${a.persistentID}" alt="" onload="tint(this)" onerror="this.removeAttribute('src')">
         <div class="name">${esc(a.name)}</div><div class="min">${num(a.minutes)}分</div></div>`).join("")}</div>
-    <h2>あなたのトップソング</h2>
+    <h2 class="more">あなたのトップソング</h2>
     <div class="songs">${t.tracks.map((s, i) => `
       <a class="song" href="${runUrl(ALBUM_SHORTCUT, s.album)}">${art(s.persistentID)}<span class="rank">${i + 1}</span>
         <div class="t"><div class="title">${esc(s.name)}</div><div class="sub">${esc(s.artist)} · ${s.plays}回再生</div></div></a>`).join("")}</div>
-    <h2>あなたのトップアルバム</h2>
+    <h2 class="more">あなたのトップアルバム</h2>
     <div class="hscroll">${t.albums.map((a, i) => `
       <a class="album" href="${runUrl(ALBUM_SHORTCUT, a.name)}">${art(a.persistentID)}<div class="rank">${i + 1}</div>
         <div class="title">${esc(a.name)}</div><div class="sub">${esc(a.artist)}</div><div class="sub">${num(a.minutes)}分</div></a>`).join("")}</div>
+    ${yearCard(y)}
     <p class="note">ライブラリの再生回数を月初に控え、その差から数えています。途中で飛ばした曲は数えません。
       再生時間・アーティスト・アルバムには DJ mix も含めますが、トップソングとプレイリストには含めません。</p>
     ${t.tracks.length ? `<a class="player" href="${runUrl(PLAYLIST_SHORTCUT, t.name)}">${art(t.tracks[0].persistentID)}
@@ -177,7 +216,10 @@ function render(months, t) {
     if (!months.length) { status.textContent = "まだリプレイがありません"; return; }
     const want = new URLSearchParams(location.search).get("month");
     const month = months.some(x => x.month === want) ? want : months[0].month;
-    render(months, await getJSON("/api/top/" + month));
+    // 年間のリプレイは無くてもよい (年の途中で、まだ作っていないこともある)
+    const [t, y] = await Promise.all([getJSON("/api/top/" + month),
+      getJSON("/api/year/" + month.slice(0, 4)).catch(() => null)]);
+    render(months, t, y);
   } catch (e) {
     status.textContent = "取得に失敗しました: " + e.message;
   }

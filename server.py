@@ -406,6 +406,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, "application/json; charset=utf-8", f.read_bytes())
             else:
                 self._send(404, "text/plain; charset=utf-8", "その月のランキングはありません".encode())
+        elif u.path.startswith("/api/year/") and re.fullmatch(r"\d{4}", u.path[10:]):
+            f = TOP_DIR / "year" / f"{u.path[10:]}.json"
+            if f.exists():
+                self._send(200, "application/json; charset=utf-8", f.read_bytes())
+            else:
+                self._send(404, "text/plain; charset=utf-8", "その年のリプレイはありません".encode())
         elif u.path.startswith("/art/") and PID_RE.fullmatch(u.path[5:]):
             img = get_artwork(u.path[5:])
             if img:

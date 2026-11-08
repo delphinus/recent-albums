@@ -34,6 +34,9 @@ HERE = Path(__file__).resolve().parent
 STATE_DIR = Path.home() / "Library/Application Support/recent-albums"
 SNAP_DIR = STATE_DIR / "playcounts"
 TOP_DIR = STATE_DIR / "top"
+YEAR_DIR = TOP_DIR / "year"
+# 手で外した曲 ({persistentID: 理由})。プレイリストから外した曲が、作り直しや年間の集計で戻らないようにする
+EXCLUDE_FILE = STATE_DIR / "exclude.json"
 CONF_DIR = Path.home() / ".config/recent-albums"
 
 FOLDER = "[! Monthly Top]"
@@ -42,6 +45,7 @@ MIN_PLAYS = 2
 EDGE_DAYS = 3
 SLACK_LINES = 10
 STATS_LIMIT = 20
+YEAR_LIMIT = 100  # Apple の年間のリプレイと同じ
 ARTIST_SEP_RE = re.compile(r"\s*(?:,|、|&| feat\.? | ft\.? | x | vs\.? )\s*", re.IGNORECASE)
 
 
@@ -151,12 +155,19 @@ def period_plays(start: date, end: date, lib: dict) -> dict[str, tuple[int, dict
     return out
 
 
-def rank(plays: dict[str, tuple[int, dict]], lib: dict) -> list[dict]:
-    """プレイリストに入れる曲。MIN_PLAYS 回以上聴いた曲の上位 LIMIT 曲で、DJ mix の曲は除く。"""
-    dj_ids = set(lib["djMixIds"])
+def excluded() -> set[str]:
+    try:
+        return set(json.loads(EXCLUDE_FILE.read_text()))
+    except (OSError, ValueError):
+        return set()
+
+
+def rank(plays: dict[str, tuple[int, dict]], lib: dict, limit: int = LIMIT) -> list[dict]:
+    """プレイリストに入れる曲。MIN_PLAYS 回以上聴いた曲の上位 limit 曲で、DJ mix の曲と手で外した曲は除く。"""
+    dj_ids, skip = set(lib["djMixIds"]), excluded()
     rows = []
     for pid, (n, t) in plays.items():
-        if n < MIN_PLAYS or is_dj_mix(t, dj_ids):
+        if n < MIN_PLAYS or pid in skip or is_dj_mix(t, dj_ids):
             continue
         rows.append({"persistentID": pid, "plays": n, "name": t.get("name") or "",
                      "artist": t.get("artist") or "", "album": t.get("album") or "",
@@ -165,7 +176,7 @@ def rank(plays: dict[str, tuple[int, dict]], lib: dict) -> list[dict]:
     # 同じ回数なら最近聴いたほうを上にする
     rows.sort(key=lambda r: r["playedDate"], reverse=True)
     rows.sort(key=lambda r: r["plays"], reverse=True)
-    return [{k: v for k, v in r.items() if k != "playedDate"} for r in rows[:LIMIT]]
+    return [{k: v for k, v in r.items() if k != "playedDate"} for r in rows[:limit]]
 
 
 def split_artists(name: str, known: set[str]) -> list[str]:
@@ -270,6 +281,37 @@ def build(month: str, notify: bool, dry_run: bool, lib: dict | None = None, stat
     return top
 
 
+def build_year(year: str, dry_run: bool, lib: dict | None = None) -> dict | None:
+    """年のはじめから最新の控えまでの集計で、「2026 Replay」を作る (月が変わるたびに作り直す)。
+
+    年のはじめの控えが無い年は、その年で最も古い控えから数える (2026 年は 8/24 から)。
+    """
+    cands = [d for d in snapshots() if d.year == int(year)]
+    first = date(int(year), 1, 1)
+    if cands and abs((cands[0] - first).days) > EDGE_DAYS:
+        # 前の年の大晦日ごろの控えがあれば、それを年のはじめとして使う
+        prev = [d for d in snapshots() if d < first and (first - d).days <= EDGE_DAYS]
+        cands = prev[-1:] + cands
+    if len(cands) < 2:
+        print(f"{year} 年を集計できる控えが無い", file=sys.stderr)
+        return None
+    start, end = cands[0], cands[-1]
+    name = f"{year} Replay"
+    lib = lib or fetch_library()
+    plays = period_plays(start, end, lib)
+    rows = rank(plays, lib, YEAR_LIMIT)
+    st = stats(plays, lib)
+    print(f"{name}: {start} → {end}, {len(rows)} 曲, {st['minutes']} 分", file=sys.stderr)
+    top = {"year": year, "name": name, "folder": FOLDER, "from": start.isoformat(), "to": end.isoformat(),
+           "createdAt": datetime.now().isoformat(timespec="seconds"), "tracks": rows} | st
+    if dry_run or not rows:
+        return top
+    make_playlist(name, [r["persistentID"] for r in rows])
+    YEAR_DIR.mkdir(parents=True, exist_ok=True)
+    (YEAR_DIR / f"{year}.json").write_text(json.dumps(top, ensure_ascii=False, indent=1))
+    return top
+
+
 def read_conf(name: str) -> str:
     try:
         return (CONF_DIR / name).read_text().strip()
@@ -316,6 +358,7 @@ def monthly():
     lib = take_snapshot(today)
     prev = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
     build(prev, notify=True, dry_run=False, lib=lib)
+    build_year(prev[:4], dry_run=False, lib=lib)
 
 
 def main():
@@ -329,6 +372,9 @@ def main():
     b.add_argument("--notify", action="store_true")
     b.add_argument("--dry-run", action="store_true")
     b.add_argument("--stats-only", action="store_true", help="プレイリストに触れず、画面用の集計だけを作り直す")
+    y = sub.add_parser("year", help="年間の Replay を作り直す")
+    y.add_argument("year")
+    y.add_argument("--dry-run", action="store_true")
     t = sub.add_parser("import-tsv")
     t.add_argument("tsv", type=Path)
     t.add_argument("--date", type=date.fromisoformat, required=True)
@@ -339,6 +385,8 @@ def main():
         take_snapshot(a.date)
     elif a.cmd == "build":
         build(a.month, a.notify, a.dry_run, stats_only=a.stats_only)
+    elif a.cmd == "year":
+        build_year(a.year, a.dry_run)
     else:
         import_tsv(a.tsv, a.date)
 
