@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="リプレイ">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>リプレイ</title>
+<style>
+  :root { color-scheme: light dark; --sub: #8e8e93; --line: rgba(128,128,128,.22); --pill: #fbe3a6; --pill-text: #3a2a00; }
+  @media (prefers-color-scheme: dark) { :root { --pill: #5a4313; --pill-text: #ffe7ad; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px -apple-system, system-ui, sans-serif; background: Canvas; overflow-x: hidden;
+         padding-bottom: calc(env(safe-area-inset-bottom) + 96px); }
+  a { color: inherit; text-decoration: none; }
+  .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; height: 52px;
+         padding: env(safe-area-inset-top) 16px 0; background: color-mix(in srgb, Canvas 85%, transparent);
+         backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--line); }
+  .bar a { font-size: 28px; line-height: 1; width: 40px; color: var(--sub); }
+  .bar span { flex: 1; text-align: center; font-weight: 700; font-size: 17px; margin-right: 40px; }
+  .hero { position: relative; padding: 36px 24px 0; }
+  /* 右上のぼかし。月ごとに色相を少しずつ変える */
+  .glow { position: absolute; z-index: -1; top: -40px; right: -90px; width: 360px; height: 380px; border-radius: 50%;
+          background: radial-gradient(circle at 60% 40%, hsl(var(--h) 95% 58%), hsl(calc(var(--h) + 18) 95% 70% / .7) 45%, transparent 70%);
+          filter: blur(30px); opacity: .9; pointer-events: none; }
+  .head { display: flex; align-items: center; gap: 12px; }
+  h1 { flex: 1; margin: 0; font-size: 44px; font-weight: 800; letter-spacing: -.02em; }
+  .year { appearance: none; -webkit-appearance: none; border: none; border-radius: 999px; padding: 10px 40px 10px 20px;
+          font: 700 22px -apple-system, system-ui, sans-serif; background: var(--pill) no-repeat right 16px center / 14px
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%23705000' stroke-width='2.2'/%3E%3C/svg%3E");
+          color: var(--pill-text); }
+  .months { display: flex; gap: 6px; margin: 44px -24px 0; padding: 0 24px; overflow-x: auto; scrollbar-width: none; }
+  .months::-webkit-scrollbar, .hscroll::-webkit-scrollbar { display: none; }
+  .months a { flex: none; padding: 6px 10px; font-size: 20px; font-weight: 700; color: var(--sub); }
+  .months a.on { color: CanvasText; }
+  .months a.none { opacity: .35; pointer-events: none; }
+  .lead { margin: 120px 0 0; font-size: 44px; line-height: 1.25; font-weight: 800; color: var(--sub); letter-spacing: -.01em; }
+  .lead b { color: CanvasText; }
+  .period { margin: 10px 0 0; font-size: 13px; color: var(--sub); }
+  h2 { margin: 72px 24px 16px; font-size: 21px; font-weight: 700; }
+  h2::after { content: " ›"; color: var(--sub); }
+  .hscroll { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 24px 8px;
+             scroll-padding: 0 24px; scrollbar-width: none; }
+  .hscroll > * { scroll-snap-align: start; flex: none; }
+  .artist { width: 70%; max-width: 320px; border-radius: 22px; padding: 20px 20px 22px; color: #fff; background: #2a2a3a;
+            text-align: center; transition: background .4s; }
+  .artist .rank { text-align: left; font-size: 60px; font-weight: 700; line-height: 1; }
+  .artist img { width: 78%; aspect-ratio: 1; margin: 12px auto 18px; display: block; border-radius: 14px; object-fit: cover;
+                background: rgba(255,255,255,.1); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .artist .name { font-size: 22px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .artist .min { margin-top: 4px; font-size: 18px; opacity: .8; }
+  /* トップソングは 4 曲ずつの列を横に並べる */
+  .songs { display: grid; grid-auto-flow: column; grid-template-rows: repeat(4, auto); grid-auto-columns: 84%;
+           column-gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 24px; scroll-padding: 0 24px;
+           scrollbar-width: none; }
+  .songs::-webkit-scrollbar { display: none; }
+  .song { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .song:nth-child(4n+1) { scroll-snap-align: start; }
+  .song img { flex: none; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: var(--line); }
+  .song .rank { flex: none; width: 1.6em; text-align: center; font-size: 20px; font-weight: 500; }
+  .song .t { min-width: 0; }
+  .song .title, .song .sub, .album .title, .album .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .song .title { font-size: 20px; font-weight: 500; }
+  .song .sub { font-size: 18px; color: var(--sub); margin-top: 2px; }
+  .album { width: 42%; max-width: 220px; }
+  .album img { width: 100%; aspect-ratio: 1; border-radius: 10px; object-fit: cover; background: var(--line);
+               box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .album .rank { margin-top: 8px; font-size: 24px; font-weight: 700; }
+  .album .title { font-size: 18px; font-weight: 600; }
+  .album .sub { font-size: 17px; color: var(--sub); }
+  .note { margin: 56px 24px 0; font-size: 12px; color: var(--sub); line-height: 1.6; }
+  /* 下に浮かぶ再生ボタン。Apple Music のミニプレーヤーの位置 */
+  .player { position: fixed; z-index: 3; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 16px);
+            display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; border-radius: 999px;
+            background: color-mix(in srgb, Canvas 80%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            box-shadow: 0 6px 24px rgba(0,0,0,.15); border: 1px solid var(--line); }
+  .player img { flex: none; width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: var(--line); }
+  .player .t { flex: 1; min-width: 0; }
+  .player .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player .sub { font-size: 13px; color: var(--sub); }
+  .player .play { flex: none; font-size: 30px; line-height: 1; padding: 0 6px; }
+  #status { padding: 40px 24px; color: var(--sub); }
+</style>
+</head>
+<body>
+<div class="bar"><a href="/" aria-label="戻る">‹</a><span>最近のアルバム</span></div>
+<div id="status">読み込み中…</div>
+<main id="main" hidden></main>
+<script>
+const ALBUM_SHORTCUT = "アルバムを再生";
+const PLAYLIST_SHORTCUT = "プレイリストを再生";
+const runUrl = (shortcut, text) => "shortcuts://run-shortcut?name=" + encodeURIComponent(shortcut)
+  + "&input=text&text=" + encodeURIComponent(text);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const art = pid => `<img loading="lazy" src="/art/${pid}" alt="" onerror="this.removeAttribute('src')">`;
+const num = n => n.toLocaleString("ja-JP");
+// to は控えを取った日なので、聴いた期間はその前日まで
+const md = d => `${d.getMonth() + 1}/${d.getDate()}`;
+const range = t => `${md(new Date(t.from))}〜${md(new Date(new Date(t.to) - 86400e3))}`;
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// アーティストのカードは、アートワークの平均色を暗くした色で塗る
+function tint(img) {
+  try {
+    const c = document.createElement("canvas");
+    c.width = c.height = 8;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0, 8, 8);
+    const d = g.getImageData(0, 0, 8, 8).data;
+    let r = 0, gr = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; gr += d[i + 1]; b += d[i + 2]; }
+    const n = d.length / 4, k = 0.45;
+    img.closest(".artist").style.background = `rgb(${r / n * k | 0}, ${gr / n * k | 0}, ${b / n * k | 0})`;
+  } catch (e) { /* 色が取れなければ既定の色のまま */ }
+}
+
+function render(months, t) {
+  const year = t.month.slice(0, 4), m = +t.month.slice(5);
+  const have = new Set(months.map(x => x.month));
+  const years = [...new Set(months.map(x => x.month.slice(0, 4)))];
+  const main = document.getElementById("main");
+  main.style.setProperty("--h", 20 + (m * 7) % 30);
+  main.innerHTML = `
+    <section class="hero">
+      <div class="glow"></div>
+      <div class="head"><h1>リプレイ</h1>
+        <select class="year" id="year">${years.map(y => `<option${y === year ? " selected" : ""}>${y}</option>`).join("")}</select></div>
+      <nav class="months" id="months">${Array.from({ length: 12 }, (_, i) => {
+        const k = `${year}-${String(i + 1).padStart(2, "0")}`;
+        return `<a href="?month=${k}" class="${k === t.month ? "on" : have.has(k) ? "" : "none"}">${i + 1}月</a>`;
+      }).join("")}</nav>
+      <p class="lead">${m}月に <b>${num(t.minutes)}<br>分間</b> 聴きました。</p>
+      <p class="period">${range(t)} の再生回数から集計 · ${num(t.songs)} 曲</p>
+    </section>
+    <h2>あなたのトップアーティスト</h2>
+    <div class="hscroll">${t.artists.map((a, i) => `
+      <div class="artist"><div class="rank">${i + 1}</div>
+        <img loading="lazy" src="/art/${a.persistentID}" alt="" onload="tint(this)" onerror="this.removeAttribute('src')">
+        <div class="name">${esc(a.name)}</div><div class="min">${num(a.minutes)}分</div></div>`).join("")}</div>
+    <h2>あなたのトップソング</h2>
+    <div class="songs">${t.tracks.map((s, i) => `
+      <a class="song" href="${runUrl(ALBUM_SHORTCUT, s.album)}">${art(s.persistentID)}<span class="rank">${i + 1}</span>
+        <div class="t"><div class="title">${esc(s.name)}</div><div class="sub">${esc(s.artist)} · ${s.plays}回再生</div></div></a>`).join("")}</div>
+    <h2>あなたのトップアルバム</h2>
+    <div class="hscroll">${t.albums.map((a, i) => `
+      <a class="album" href="${runUrl(ALBUM_SHORTCUT, a.name)}">${art(a.persistentID)}<div class="rank">${i + 1}</div>
+        <div class="title">${esc(a.name)}</div><div class="sub">${esc(a.artist)}</div><div class="sub">${num(a.minutes)}分</div></a>`).join("")}</div>
+    <p class="note">ライブラリの再生回数を月初に控え、その差から数えています。途中で飛ばした曲は数えません。
+      再生時間・アーティスト・アルバムには DJ mix も含めますが、トップソングとプレイリストには含めません。</p>
+    ${t.tracks.length ? `<a class="player" href="${runUrl(PLAYLIST_SHORTCUT, t.name)}">${art(t.tracks[0].persistentID)}
+      <div class="t"><div class="title">${esc(t.name)}</div><div class="sub">${t.tracks.length} 曲のプレイリストを再生</div></div>
+      <span class="play">▶</span></a>` : ""}`;
+  document.getElementById("year").onchange = e => {
+    // その年で一番新しい月へ
+    const k = months.find(x => x.month.startsWith(e.target.value)).month;
+    location.search = "?month=" + k;
+  };
+  document.title = `リプレイ ${year}年${m}月`;
+  main.hidden = false;
+  document.getElementById("status").hidden = true;
+  // 選んでいる月のタブが見えるようにする
+  document.querySelector("#months .on")?.scrollIntoView({ inline: "center", block: "nearest" });
+  window.scrollTo(0, 0);
+}
+
+(async () => {
+  const status = document.getElementById("status");
+  try {
+    const { months } = await getJSON("/api/top");
+    if (!months.length) { status.textContent = "まだリプレイがありません"; return; }
+    const want = new URLSearchParams(location.search).get("month");
+    const month = months.some(x => x.month === want) ? want : months[0].month;
+    render(months, await getJSON("/api/top/" + month));
+  } catch (e) {
+    status.textContent = "取得に失敗しました: " + e.message;
+  }
+})();
+</script>
+</body>
+</html>

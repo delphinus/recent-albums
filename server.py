@@ -367,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", (HERE / "index.html").read_bytes())
+        elif u.path == "/replay":
+            self._send(200, "text/html; charset=utf-8", (HERE / "replay.html").read_bytes())
         elif u.path in ICONS:
             name, ctype = ICONS[u.path]
             self._send(200, ctype, (HERE / name).read_bytes(), cache="max-age=86400")

@@ -20,6 +20,7 @@ server.py と同じく、プレイリスト「DJ Mix」に入っているか、�
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -40,6 +41,8 @@ LIMIT = 50  # 1 回だけ聴いた曲が 7 割を占めるので、100 曲にす
 MIN_PLAYS = 2
 EDGE_DAYS = 3
 SLACK_LINES = 10
+STATS_LIMIT = 20
+ARTIST_SEP_RE = re.compile(r"\s*(?:,|、|&| feat\.? | ft\.? | x | vs\.? )\s*", re.IGNORECASE)
 
 
 def playlist_name(month: str, start: date, end: date) -> str:
@@ -128,16 +131,15 @@ def is_dj_mix(t: dict, dj_ids: set[str]) -> bool:
     return t["persistentID"] in dj_ids or bool(DJ_MIX_RE.search(album) and not NOT_DJ_MIX_RE.search(album))
 
 
-def rank(start: date, end: date, lib: dict) -> list[dict]:
+def period_plays(start: date, end: date, lib: dict) -> dict[str, tuple[int, dict]]:
+    """期間中に聴いた曲の {persistentID: (回数, 曲)}。期間の後に消した曲は含めない。"""
     before, after = load_counts(start), load_counts(end)
-    dj_ids = set(lib["djMixIds"])
     meta = {t["persistentID"]: t for t in lib["tracks"]}
-    rows = []
+    out = {}
     for pid, n in after.items():
         plays = n - before.get(pid, 0)
         t = meta.get(pid)
-        # 期間の後に消した曲はプレイリストに入れられないので数えない
-        if plays < MIN_PLAYS or not t or is_dj_mix(t, dj_ids):
+        if plays < 1 or not t:
             continue
         # 最後に再生した日が期間より前なら、期間中には聴いていない。それでも回数が増えて見えるのは、
         # 始まりの控えに居なかった曲が、昔の再生回数を持ったままライブラリに戻ってきた場合。
@@ -145,13 +147,71 @@ def rank(start: date, end: date, lib: dict) -> list[dict]:
         # 現れる (2026-08-25 に 20 曲以上)。追加日は取り込んだ日になるので、追加日では見分けられない
         if not t.get("playedDate") or datetime.fromisoformat(t["playedDate"]).astimezone().date() < start:
             continue
-        rows.append({"persistentID": pid, "plays": plays, "name": t.get("name") or "",
+        out[pid] = (plays, t)
+    return out
+
+
+def rank(plays: dict[str, tuple[int, dict]], lib: dict) -> list[dict]:
+    """プレイリストに入れる曲。MIN_PLAYS 回以上聴いた曲の上位 LIMIT 曲で、DJ mix の曲は除く。"""
+    dj_ids = set(lib["djMixIds"])
+    rows = []
+    for pid, (n, t) in plays.items():
+        if n < MIN_PLAYS or is_dj_mix(t, dj_ids):
+            continue
+        rows.append({"persistentID": pid, "plays": n, "name": t.get("name") or "",
                      "artist": t.get("artist") or "", "album": t.get("album") or "",
+                     "minutes": round(n * (t.get("duration") or 0) / 60),
                      "playedDate": t.get("playedDate") or ""})
     # 同じ回数なら最近聴いたほうを上にする
     rows.sort(key=lambda r: r["playedDate"], reverse=True)
     rows.sort(key=lambda r: r["plays"], reverse=True)
-    return rows[:LIMIT]
+    return [{k: v for k, v in r.items() if k != "playedDate"} for r in rows[:LIMIT]]
+
+
+def split_artists(name: str, known: set[str]) -> list[str]:
+    """連名を名義ごとに分ける。分けた名義のどれかがライブラリに単独で居るときだけ分ける。
+
+    "Flakee, Impulse Riders & Darwin" は 3 人に分けるが、"Above & Beyond" は 1 組のまま残す。
+    """
+    parts = [x for x in ARTIST_SEP_RE.split(name) if x]
+    if len(parts) > 1 and any(x in known for x in parts):
+        return parts
+    return [name] if name else []
+
+
+def stats(plays: dict[str, tuple[int, dict]], lib: dict) -> dict:
+    """リプレイの画面に出す集計。DJ mix も聴いた時間なので含める (トップソングとは違う)。"""
+    known = {t.get("artist") for t in lib["tracks"] if t.get("artist")}
+    total = 0.0
+    artists: dict[str, dict] = {}
+    albums: dict[str, dict] = {}
+    for pid, (n, t) in plays.items():
+        sec = n * (t.get("duration") or 0)
+        total += sec
+        for a in split_artists(t.get("artist") or "", known):
+            e = artists.setdefault(a, {"name": a, "seconds": 0.0, "art": (0, pid)})
+            e["seconds"] += sec
+            # アーティストの絵は、その期間に一番聴いた曲のアートワーク
+            e["art"] = max(e["art"], (n, pid))
+        if album := t.get("album"):
+            e = albums.setdefault(album, {"name": album, "seconds": 0.0, "art": (0, pid), "artists": {}})
+            e["seconds"] += sec
+            e["art"] = max(e["art"], (n, pid))
+            who = t.get("albumArtist") or t.get("artist") or ""
+            e["artists"][who] = e["artists"].get(who, 0) + sec
+
+    def top(d: dict, extra) -> list[dict]:
+        rows = sorted(d.values(), key=lambda e: e["seconds"], reverse=True)[:STATS_LIMIT]
+        return [{"name": e["name"], "minutes": round(e["seconds"] / 60), "persistentID": e["art"][1]} | extra(e)
+                for e in rows]
+
+    return {
+        "minutes": round(total / 60),
+        "songs": len(plays),
+        "artists": top(artists, lambda e: {}),
+        # 曲ごとに名義が違うアルバムは、一番長く聴いた名義を出す
+        "albums": top(albums, lambda e: {"artist": max(e["artists"], key=e["artists"].get)}),
+    }
 
 
 def make_playlist(name: str, pids: list[str]) -> dict:
@@ -169,7 +229,12 @@ def make_playlist(name: str, pids: list[str]) -> dict:
     return res
 
 
-def build(month: str, notify: bool, dry_run: bool, lib: dict | None = None) -> dict:
+def build(month: str, notify: bool, dry_run: bool, lib: dict | None = None, stats_only: bool = False) -> dict:
+    """月のランキングを作る。stats_only ならプレイリストには触れず、画面用の集計だけを作り直す。
+
+    stats_only のときトップソングは前に作ったものをそのまま使う。プレイリストから手で外した曲を
+    画面に戻さないため。
+    """
     first = date.fromisoformat(month + "-01")
     cands = snapshots()
     start, end = nearest(first, cands), nearest(next_month(first), cands)
@@ -177,18 +242,29 @@ def build(month: str, notify: bool, dry_run: bool, lib: dict | None = None) -> d
         sys.exit(f"{month} の期間を挟む控えが無い (控え: {[d.isoformat() for d in cands]})")
     name = playlist_name(month, start, end)
     lib = lib or fetch_library()
-    rows = rank(start, end, lib)
-    print(f"{name}: {start} → {end}, {len(rows)} 曲", file=sys.stderr)
+    plays = period_plays(start, end, lib)
+    path = TOP_DIR / f"{month}.json"
+    if stats_only:
+        rows = json.loads(path.read_text())["tracks"]
+        minutes = {pid: round(n * (t.get("duration") or 0) / 60) for pid, (n, t) in plays.items()}
+        for r in rows:
+            r["minutes"] = minutes.get(r["persistentID"], r.get("minutes", 0))
+    else:
+        rows = rank(plays, lib)
+    st = stats(plays, lib)
+    print(f"{name}: {start} → {end}, {len(rows)} 曲, {st['minutes']} 分", file=sys.stderr)
     for i, r in enumerate(rows, 1):
         print(f"  {i:2}. {r['plays']:3} 回  {r['name']} / {r['artist']}", file=sys.stderr)
+    for a in st["artists"][:5]:
+        print(f"  artist {a['minutes']:4} 分  {a['name']}", file=sys.stderr)
     top = {"month": month, "name": name, "folder": FOLDER, "from": start.isoformat(), "to": end.isoformat(),
-           "createdAt": datetime.now().isoformat(timespec="seconds"),
-           "tracks": [{k: v for k, v in r.items() if k != "playedDate"} for r in rows]}
+           "createdAt": datetime.now().isoformat(timespec="seconds"), "tracks": rows} | st
     if dry_run or not rows:
         return top
-    make_playlist(name, [r["persistentID"] for r in rows])
+    if not stats_only:
+        make_playlist(name, [r["persistentID"] for r in rows])
     TOP_DIR.mkdir(parents=True, exist_ok=True)
-    (TOP_DIR / f"{month}.json").write_text(json.dumps(top, ensure_ascii=False, indent=1))
+    path.write_text(json.dumps(top, ensure_ascii=False, indent=1))
     if notify:
         send_slack(top)
     return top
@@ -217,9 +293,9 @@ def send_slack(top: dict):
         return
     m = int(top["month"][5:])
     lines = [f":headphones: {m} 月によく聴いた曲のプレイリストを作りました: *{slack_escape(top['name'])}* "
-             f"({len(top['tracks'])} 曲)"]
+             f"({len(top['tracks'])} 曲)。{m} 月は {top['minutes']:,} 分聴きました"]
     if url := read_conf("public-url"):
-        lines.append(f"<{url.rstrip('/')}/?top={top['month']}|一覧を開いて再生する>")
+        lines.append(f"<{url.rstrip('/')}/replay?month={top['month']}|リプレイを開く>")
     for i, t in enumerate(top["tracks"][:SLACK_LINES], 1):
         lines.append(f"{i}. {slack_escape(t['name'])} — {slack_escape(t['artist'])} ({t['plays']} 回)")
     if len(top["tracks"]) > SLACK_LINES:
@@ -252,6 +328,7 @@ def main():
     b.add_argument("month")
     b.add_argument("--notify", action="store_true")
     b.add_argument("--dry-run", action="store_true")
+    b.add_argument("--stats-only", action="store_true", help="プレイリストに触れず、画面用の集計だけを作り直す")
     t = sub.add_parser("import-tsv")
     t.add_argument("tsv", type=Path)
     t.add_argument("--date", type=date.fromisoformat, required=True)
@@ -261,7 +338,7 @@ def main():
     elif a.cmd == "snapshot":
         take_snapshot(a.date)
     elif a.cmd == "build":
-        build(a.month, a.notify, a.dry_run)
+        build(a.month, a.notify, a.dry_run, stats_only=a.stats_only)
     else:
         import_tsv(a.tsv, a.date)
 

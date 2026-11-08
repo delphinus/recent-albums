@@ -35,8 +35,11 @@ Apple Music が月初に作る「前月によく聴いた曲」のプレイリ�
 - 毎月 1 日に LaunchAgent `dev.delphinus.recent-albums-monthly` が `monthly_top.py monthly` を回し、
   フォルダ `[! Monthly Top]` に「2026-10 Monthly Top」のような手動プレイリストを作る
 - 入れるのは 2 回以上聴いた曲の上位 50 曲。DJ mix の曲 (下の「DJ mix の判定」と同じ基準) は入れない
-- 作ったら Slack に知らせる。リンクを開くとこの Web アプリのランキングの画面 (`/?top=2026-10`) が出て、
-  「再生」でショートカット「プレイリストを再生」を呼ぶ。プレイリストの画面の先頭からも開ける
+- 作ったら Slack に知らせる。リンクを開くとリプレイの画面 (`/replay?month=2026-10`) が出る。Apple Music の
+  リプレイと同じ並びで、総再生時間・トップアーティスト・トップソング・トップアルバムを出し、下の再生ボタンで
+  ショートカット「プレイリストを再生」を呼ぶ。プレイリストの画面の先頭からも開ける
+- 再生時間・アーティスト・アルバムには DJ mix も含める (トップソングとプレイリストには含めない)。
+  連名の曲は、分けた名義のどれかがライブラリに単独で居るときだけ、名義ごとに数える
 
 Music.app は曲ごとの累計の再生回数しか持たず、いつ聴いたかは持たない。そこで月初に累計の控えを
 `~/Library/Application Support/recent-albums/playcounts/` に取り、前月初めの控えとの差をその月の回数とする。
@@ -48,6 +51,7 @@ Music.app は曲ごとの累計の再生回数しか持たず、いつ聴いた�
 ```sh
 python3 monthly_top.py build 2026-10 --dry-run    # 集計だけ見る
 python3 monthly_top.py build 2026-10 [--notify]   # 作り直す (同じフォルダの同じ名前のものを置き換える)
+python3 monthly_top.py build 2026-10 --stats-only # プレイリストに触れず、画面用の集計だけを作り直す
 python3 monthly_top.py import-tsv <tracks.tsv> --date 2026-10-04   # 別に取っておいた再生回数の一覧から控えを作る
 ```
 

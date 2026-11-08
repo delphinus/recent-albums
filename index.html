@@ -56,8 +56,6 @@
   .series-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
   .series-head h2 { flex: 1; min-width: 0; padding: 0; color: inherit; }
   .series-head button { flex: none; font-size: 14px; }
-  .rank { flex: none; width: 1.6em; text-align: right; font-weight: 600; color: var(--sub); }
-  .row .small-art { flex: none; width: 56px; height: 56px; border-radius: 6px; background: var(--line); object-fit: cover; }
   .series-head .random { text-decoration: none; border: 1px solid var(--accent); border-radius: 14px; padding: 4px 10px; background: none; color: var(--accent); }
 </style>
 </head>
@@ -76,8 +74,8 @@ const PLAYLIST_SHORTCUT = "プレイリストを再生";
 const VIEWS = { recent: "最近", series: "シリーズ", playlists: "プレイリスト" };
 let albums = [], genre = "", state = "", djMixOnly = false;
 let view = "recent", playlists = null, series = null, openSeries = "", results = null, query = "";
-// 月ごとのランキング。タブには出さず、プレイリストの画面と ?top=YYYY-MM (Slack の通知のリンク) から開く
-let topMonths = null, topMonth = "", topData = null;
+// 月ごとのリプレイの一覧。プレイリストの画面の先頭に出し、/replay へ飛ぶ
+let topMonths = null;
 const SHUFFLE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" '
   + 'stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
 
@@ -167,39 +165,11 @@ function seriesRow(s) {
 
 function topMonthRow(m) {
   return `
-    <li><a class="row" href="?top=${m.month}" data-top="${m.month}">
-      <div class="pl-icon">♛</div>
+    <li><a class="row" href="/replay?month=${m.month}">
+      <div class="pl-icon">↻</div>
       <div class="info"><div class="title">${esc(m.name)}</div>
       <div class="meta"><span>${m.count} 曲</span><span>${fmtRange(m)} の再生回数</span></div></div>
     </a></li>`;
-}
-
-function topTrackRow(t, i) {
-  return `
-    <li><a class="row" href="${runUrl(SHORTCUT, t.album)}">
-      <span class="rank">${i + 1}</span>
-      <img class="small-art" loading="lazy" src="/art/${t.persistentID}" alt="" onerror="this.removeAttribute('src')">
-      <div class="info"><div class="title">${esc(t.name)}</div>
-      <div class="meta"><span>${esc(t.artist)}</span></div>
-      <div class="meta"><span>▶ ${t.plays} 回</span><span>${esc(t.album)}</span></div></div>
-    </a></li>`;
-}
-
-function renderTop(list, status) {
-  if (!topData || topData.month !== topMonth) { status.textContent = "読み込み中…"; list.innerHTML = ""; loadTop(); return; }
-  // 前後の月へ移れるよう、一覧も取っておく
-  if (!topMonths) loadTopMonths();
-  const i = topMonths ? topMonths.findIndex(m => m.month === topMonth) : -1;
-  const newer = i > 0 ? topMonths[i - 1].month : "", older = i >= 0 && i + 1 < topMonths.length ? topMonths[i + 1].month : "";
-  status.textContent = "";
-  list.innerHTML = `
-    <div class="series-head"><button data-back>‹ 戻る</button><h2>${esc(topData.name)}</h2>
-      <a class="random" href="${runUrl(PLAYLIST_SHORTCUT, topData.name)}">再生</a></div>
-    <div class="series-head">
-      <button data-top="${older}" ${older ? "" : "disabled"}>‹ 前の月</button>
-      <h2 style="text-align:center;font-size:13px;color:var(--sub)">${fmtRange(topData)} の再生回数 · DJ mix を除く</h2>
-      <button data-top="${newer}" ${newer ? "" : "disabled"}>次の月 ›</button></div>`
-    + section("", topData.tracks.map(topTrackRow));
 }
 
 const section = (title, rows) => rows.length ? `${title ? `<h2>${title}</h2>` : ""}<ul>${rows.join("")}</ul>` : "";
@@ -209,14 +179,13 @@ function render() {
     const b = document.createElement("button");
     b.className = view === k ? "on" : "";
     b.textContent = label;
-    b.onclick = () => { view = k; openSeries = ""; topMonth = ""; history.replaceState(null, "", location.pathname); render(); };
+    b.onclick = () => { view = k; openSeries = ""; render(); };
     return b;
   }));
   const chips = document.getElementById("chips");
   const list = document.getElementById("list"), status = document.getElementById("status");
   // 検索中は検索結果だけを出す。絞り込みのチップは最近のアルバムにだけ効く
   chips.hidden = query !== "" || view !== "recent";
-  if (topMonth && !query) return renderTop(list, status);
   if (query) {
     if (!results) { status.textContent = "検索中…"; list.innerHTML = ""; return; }
     status.textContent = results.albums.length || results.series.length || results.playlists.length ? "" : "見つかりません";
@@ -284,7 +253,6 @@ async function loadOnce(name, url, set) {
 }
 const loadPlaylists = () => loadOnce("playlists", "/api/playlists", r => { playlists = r.playlists; });
 const loadTopMonths = () => loadOnce("topMonths", "/api/top", r => { topMonths = r.months; });
-const loadTop = () => loadOnce("top", "/api/top/" + topMonth, r => { topData = r; });
 const loadSeries = () => loadOnce("series", "/api/series", r => { series = r.series; });
 
 // 選んだアルバムに「<アルバム名> Mix」のプレイリストがあれば、そちらを流す
@@ -297,21 +265,11 @@ function playRandom(name) {
 
 // シリーズを開く・戻る・ランダムに再生する。行は innerHTML で作り直すので、まとめてここで受ける
 document.getElementById("list").onclick = e => {
-  const t = e.target.closest("[data-open], [data-random], [data-back], [data-top]");
+  const t = e.target.closest("[data-open], [data-random], [data-back]");
   if (!t) return;
   e.preventDefault();
   if ("random" in t.dataset) return playRandom(t.dataset.random);
-  if ("top" in t.dataset || ("back" in t.dataset && topMonth)) {
-    // ランキングを開く・閉じる。戻るとプレイリストの画面へ。URL も合わせて、再読み込みで同じ画面が出るようにする
-    topMonth = t.dataset.top ?? "";
-    if (!topMonth) view = "playlists";
-    history.replaceState(null, "", topMonth ? "?top=" + topMonth : location.pathname);
-    render();
-    window.scrollTo(0, 0);
-    return;
-  }
   openSeries = t.dataset.open ?? "";
-  topMonth = "";
   if (openSeries && query) {
     // 検索結果から開いたときは検索を閉じる
     query = "";
@@ -357,9 +315,10 @@ async function load(refresh) {
   }
 }
 
-document.getElementById("reload").onclick = () => { playlists = null; series = null; topMonths = null; topData = null; load(true); };
-topMonth = /^\d{4}-\d{2}$/.test(new URLSearchParams(location.search).get("top") ?? "")
-  ? new URLSearchParams(location.search).get("top") : "";
+document.getElementById("reload").onclick = () => { playlists = null; series = null; topMonths = null; load(true); };
+// 以前の Slack の通知は ?top=YYYY-MM でランキングを開いていた。リプレイの画面へ移す
+const oldTop = new URLSearchParams(location.search).get("top");
+if (oldTop) location.replace("/replay?month=" + encodeURIComponent(oldTop));
 load(false);
 </script>
 </body>
