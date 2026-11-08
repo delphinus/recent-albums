@@ -37,6 +37,9 @@ from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = Path.home() / "Library/Caches/recent-albums"
+# monthly_top.py が作った月ごとのランキング (YYYY-MM.json)
+TOP_DIR = Path.home() / "Library/Application Support/recent-albums/top"
+MONTH_RE = re.compile(r"\d{4}-\d{2}")
 ART_SIZE = 320  # px。一覧の 96pt x 3 倍 = 288px を少し上回る大きさ
 # アイコン。iPhone のホーム画面は SVG を使えないので PNG も置く。/favicon.ico は
 # <link rel="icon"> を見ずに取りに来るブラウザ向けで、PNG を返しても表示される
@@ -290,6 +293,15 @@ def search(q: str) -> dict:
     }
 
 
+def list_top() -> list[dict]:
+    """月ごとのランキングの一覧。新しい月が先。曲の明細は含めない。"""
+    out = []
+    for p in sorted(TOP_DIR.glob("*.json"), reverse=True):
+        t = json.loads(p.read_text())
+        out.append({k: t[k] for k in ("month", "name", "from", "to")} | {"count": len(t["tracks"])})
+    return out
+
+
 def music_running() -> bool:
     return subprocess.run(["pgrep", "-xq", "Music"]).returncode == 0
 
@@ -383,6 +395,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, "application/json; charset=utf-8", json.dumps(body, ensure_ascii=False).encode())
             except subprocess.CalledProcessError as e:
                 self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
+        elif u.path == "/api/top":
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"months": list_top()}, ensure_ascii=False).encode())
+        elif u.path.startswith("/api/top/") and MONTH_RE.fullmatch(u.path[9:]):
+            f = TOP_DIR / f"{u.path[9:]}.json"
+            if f.exists():
+                self._send(200, "application/json; charset=utf-8", f.read_bytes())
+            else:
+                self._send(404, "text/plain; charset=utf-8", "その月のランキングはありません".encode())
         elif u.path.startswith("/art/") and PID_RE.fullmatch(u.path[5:]):
             img = get_artwork(u.path[5:])
             if img:

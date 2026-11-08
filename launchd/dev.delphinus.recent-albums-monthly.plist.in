@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.delphinus.recent-albums-monthly</string>
+	<!-- server.py と同じ python3 で動かす。Music.app を操作する許可 (オートメーション) は
+	     実行ファイルごとに付くので、別の python3 にすると許可を取り直すことになる。 -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>@PYTHON@</string>
+		<string>@DIR@/monthly_top.py</string>
+		<string>monthly</string>
+	</array>
+	<!-- 毎月 1 日 0:05。Mac が寝ていれば、起きたときに 1 回だけ回る。 -->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Day</key>
+		<integer>1</integer>
+		<key>Hour</key>
+		<integer>0</integer>
+		<key>Minute</key>
+		<integer>5</integer>
+	</dict>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>@HOME@/Library/Logs/recent-albums-monthly.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/Library/Logs/recent-albums-monthly.log</string>
+</dict>
+</plist>

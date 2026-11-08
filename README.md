@@ -26,6 +26,37 @@ iPhone の Music アプリの「アルバム」画面は追加順に並べられ
 ライブラリ全体の一覧も 1 時間ごとに取り直す (「更新」ボタンでも取り直す)。プレイリストは iTunesLibrary
 フレームワークで読むので、Music.app で作ったばかりのものは少し遅れて出ることがある。
 
+## 月間ランキング
+
+Apple Music が月初に作る「前月によく聴いた曲」のプレイリストを、ライブラリ全体で作る。Apple のものは Apple Music の
+カタログの曲しか数えないが、こちらはリッピングした曲や購入した曲も同じように数える。逆に、ライブラリに
+追加していないカタログの曲は数えられない。
+
+- 毎月 1 日に LaunchAgent `dev.delphinus.recent-albums-monthly` が `monthly_top.py monthly` を回し、
+  フォルダ `[! Monthly Top]` に「2026-10 Monthly Top」のような手動プレイリストを作る
+- 入れるのは 2 回以上聴いた曲の上位 50 曲。DJ mix の曲 (下の「DJ mix の判定」と同じ基準) は入れない
+- 作ったら Slack に知らせる。リンクを開くとこの Web アプリのランキングの画面 (`/?top=2026-10`) が出て、
+  「再生」でショートカット「プレイリストを再生」を呼ぶ。プレイリストの画面の先頭からも開ける
+
+Music.app は曲ごとの累計の再生回数しか持たず、いつ聴いたかは持たない。そこで月初に累計の控えを
+`~/Library/Application Support/recent-albums/playcounts/` に取り、前月初めの控えとの差をその月の回数とする。
+途中で飛ばした曲は Music.app が数えないので、こちらでも数えない。
+
+控えが月の 1 日ちょうどに取れていないとき (Mac が寝ていた等) は、1 日に最も近い控えを使う。両端のどちらかが
+3 日より離れていれば、プレイリスト名に実際の期間を添える (例: 「2026-08 Monthly Top (8/24〜)」)。
+
+```sh
+python3 monthly_top.py build 2026-10 --dry-run    # 集計だけ見る
+python3 monthly_top.py build 2026-10 [--notify]   # 作り直す (同じフォルダの同じ名前のものを置き換える)
+python3 monthly_top.py import-tsv <tracks.tsv> --date 2026-10-04   # 別に取っておいた再生回数の一覧から控えを作る
+```
+
+設定はリポジトリの外に置く。どちらも無ければ Slack に送らない、またはリンクを付けない。
+
+- `~/.config/recent-albums/slack-webhook`: Incoming Webhook の URL (1 行。`chmod 600`)
+- `~/.config/recent-albums/public-url`: この Web アプリを外から開く URL (1 行)。Slack は `shortcuts://` をリンクにしないので、Web アプリの画面を経由する
+- ログ: `~/Library/Logs/recent-albums-monthly.log`
+
 ## シリーズ
 
 「シリーズ」タブで、シリーズごとのフォルダを並べる。アイコンには新しく追加した 4 枚のアートワークを出す。
@@ -73,7 +104,7 @@ iPhone の Music アプリの「アルバム」画面は追加順に並べられ
 ./install.sh
 ```
 
-LaunchAgent `dev.delphinus.recent-albums` を入れて起動する。8765 番ポートで待ち受け、
+LaunchAgent `dev.delphinus.recent-albums` (Web アプリ) と `dev.delphinus.recent-albums-monthly` (月間ランキング) を入れて起動する。8765 番ポートで待ち受け、
 LAN 内から `http://<Mac のホスト名>.local:8765/` で開ける。認証は無いので、LAN の外には出さないこと。
 
 - 初回は Music.app の操作を許可するダイアログが出る
