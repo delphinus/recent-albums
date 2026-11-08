@@ -179,7 +179,13 @@ function render() {
     const b = document.createElement("button");
     b.className = view === k ? "on" : "";
     b.textContent = label;
-    b.onclick = () => { view = k; openSeries = ""; render(); };
+    b.onclick = () => {
+      view = k;
+      openSeries = "";
+      // 開いているタブを URL に残す。リプレイの画面から戻ったとき、同じタブを開くため
+      history.replaceState(null, "", k === "recent" ? location.pathname : "?view=" + k);
+      render();
+    };
     return b;
   }));
   const chips = document.getElementById("chips");
@@ -319,6 +325,8 @@ document.getElementById("reload").onclick = () => { playlists = null; series = n
 // 以前の Slack の通知は ?top=YYYY-MM でランキングを開いていた。リプレイの画面へ移す
 const oldTop = new URLSearchParams(location.search).get("top");
 if (oldTop) location.replace("/replay?month=" + encodeURIComponent(oldTop));
+const startView = new URLSearchParams(location.search).get("view");
+if (startView in VIEWS) view = startView;
 load(false);
 </script>
 </body>
