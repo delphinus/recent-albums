@@ -139,6 +139,12 @@ def rank(start: date, end: date, lib: dict) -> list[dict]:
         # 期間の後に消した曲はプレイリストに入れられないので数えない
         if plays < MIN_PLAYS or not t or is_dj_mix(t, dj_ids):
             continue
+        # 最後に再生した日が期間より前なら、期間中には聴いていない。それでも回数が増えて見えるのは、
+        # 始まりの控えに居なかった曲が、昔の再生回数を持ったままライブラリに戻ってきた場合。
+        # 控えから取り込んだ曲が iCloud 上の昔のエントリと結び付くと、2012 年の回数を引き継いで
+        # 現れる (2026-08-25 に 20 曲以上)。追加日は取り込んだ日になるので、追加日では見分けられない
+        if not t.get("playedDate") or datetime.fromisoformat(t["playedDate"]).astimezone().date() < start:
+            continue
         rows.append({"persistentID": pid, "plays": plays, "name": t.get("name") or "",
                      "artist": t.get("artist") or "", "album": t.get("album") or "",
                      "playedDate": t.get("playedDate") or ""})
