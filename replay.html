@@ -15,7 +15,11 @@
   @media (prefers-color-scheme: dark) { :root { --pill: #5a4313; --pill-text: #ffe7ad; } }
   @media (min-width: 700px) { :root { --pad: 40px; --gap: 20px; } }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 15px -apple-system, system-ui, sans-serif; background: Canvas; overflow-x: hidden;
+  /* iPhone でページ全体が左右に動かないようにする。iOS の Safari は body の overflow-x: hidden だけでは
+     横の動きを止めないので、html でも切り、横の操作はページでは受け付けない。横に送る段は
+     それ自体がスクロールする箱なので、ここの指定に関係なく横に送れる */
+  html { overflow-x: clip; touch-action: pan-y pinch-zoom; }
+  body { margin: 0; font: 15px -apple-system, system-ui, sans-serif; background: Canvas; overflow-x: clip;
          padding-bottom: calc(env(safe-area-inset-bottom) + 90px); }
   main { max-width: 1180px; margin: 0 auto; }
   a { color: inherit; text-decoration: none; }
@@ -24,7 +28,8 @@
          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--line); }
   .bar a { font-size: 26px; line-height: 1; width: 40px; color: var(--sub); }
   .bar span { flex: 1; text-align: center; font-weight: 700; font-size: 15px; margin-right: 40px; }
-  .hero { position: relative; padding: 28px var(--pad) 0; }
+  /* ぼかしは右へはみ出して置くので、ここで切る。切らないとページの幅が広がり、横に動く */
+  .hero { position: relative; padding: 28px var(--pad) 0; overflow-x: clip; }
   /* 右上のぼかし。月ごとに色相を少しずつ変える */
   .glow { position: absolute; z-index: -1; top: -60px; right: -80px; width: min(70vw, 620px); height: 460px; border-radius: 50%;
           background: radial-gradient(circle at 60% 40%, hsl(var(--h) 95% 58%), hsl(calc(var(--h) + 18) 95% 70% / .7) 45%, transparent 70%);
@@ -45,6 +50,7 @@
   .period { margin: 8px 0 0; font-size: 12px; color: var(--sub); }
   h2 { margin: 64px var(--pad) 12px; font-size: 17px; font-weight: 700; }
   h2.more::after { content: " ›"; color: var(--sub); }
+  .months, .hscroll, .songs { touch-action: pan-x pan-y pinch-zoom; }
   .hscroll { display: flex; gap: var(--gap); overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 var(--pad) 8px;
              scroll-padding: 0 var(--pad); scrollbar-width: none; }
   .hscroll > * { scroll-snap-align: start; flex: none; }
