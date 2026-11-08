@@ -80,20 +80,29 @@
   .album .rank { margin-top: 6px; font-size: 17px; font-weight: 700; }
   .album .title { font-size: 13px; font-weight: 600; }
   .album .sub { font-size: 12px; color: var(--sub); }
-  /* 年間のリプレイ。押すとその年のプレイリストを流す */
-  .yearcard { position: relative; display: block; margin: 0 var(--pad); aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden;
-              color: #fff; background: linear-gradient(160deg, #f4b73f 0%, #f39a3b 38%, #ec6a3f 62%, #a9532a 100%);
+  /* 年間のリプレイ。押すとその年のプレイリストを流す。
+     Replay・’26・アーティスト名は上から順に積む。位置を指定して重ねると、アーティスト名の行数が
+     増えたときに ’26 にかぶる */
+  .yearcard { position: relative; display: flex; flex-direction: column; margin: 0 var(--pad); min-height: 420px;
+              padding: 28% 8% 7%; border-radius: 16px; overflow: hidden; color: #fff;
+              background: linear-gradient(180deg, #f3bd45 0%, #f2a23d 30%, #ec7444 56%, #c8653a 78%, #8e5328 100%);
               box-shadow: 0 10px 40px rgba(240,140,40,.35); }
-  @media (min-width: 700px) { .yearcard { aspect-ratio: 2.35 / 1; } }
-  .yearcard::before { content: ""; position: absolute; inset: 35% -10% auto -10%; height: 40%; border-radius: 50%;
-                      background: radial-gradient(ellipse, rgba(255,90,60,.55), transparent 70%); filter: blur(20px); }
-  .yearcard .label { position: absolute; left: 7%; top: 12%; font-size: clamp(36px, 7vw, 56px); font-weight: 700; letter-spacing: -.02em; }
-  .yearcard .yy { position: absolute; right: 6%; bottom: 14%; font-size: clamp(130px, 26vw, 260px); font-weight: 500; line-height: .8;
-                  letter-spacing: -.04em; color: rgba(255,255,255,.88); }
-  .yearcard .who { position: absolute; left: 8%; right: 8%; bottom: 7%; text-align: center; font-size: 15px; line-height: 1.5;
+  .yearcard::before { content: ""; position: absolute; inset: 30% -15% auto -15%; height: 40%; border-radius: 50%;
+                      background: radial-gradient(ellipse, rgba(255,90,60,.5), transparent 70%); filter: blur(24px); }
+  .yearcard > * { position: relative; }
+  .yearcard .label { font-size: clamp(40px, 11vw, 56px); font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .yearcard .yy { margin: 4% 0 0 -2%; font-size: clamp(120px, 44vw, 260px); font-weight: 500; line-height: .85;
+                  letter-spacing: -.04em; color: rgba(255,255,255,.92); }
+  .yearcard .who { margin-top: auto; padding-top: 6%; text-align: center; font-size: 17px; line-height: 1.5;
                    text-shadow: 0 1px 6px rgba(0,0,0,.25); }
-  .yearcard .go { position: absolute; right: 4%; top: 9%; width: 52px; height: 52px; border-radius: 50%; display: flex;
-                  align-items: center; justify-content: center; background: rgba(255,255,255,.9); color: #e0612f; font-size: 22px; }
+  .yearcard .go { position: absolute; right: 5%; top: 5%; width: 48px; height: 48px; border-radius: 50%; display: flex;
+                  align-items: center; justify-content: center; background: rgba(255,255,255,.9); color: #e0612f; font-size: 20px; }
+  /* PC では Apple と同じく ’26 を右に寄せ、アーティスト名をその下に置く */
+  @media (min-width: 700px) {
+    .yearcard { min-height: 0; padding: 6% 7% 4%; }
+    .yearcard .yy { align-self: flex-end; margin: -2% 4% 0 0; font-size: clamp(160px, 20vw, 240px); }
+    .yearcard .who { padding-top: 3%; font-size: 15px; }
+  }
   .yearmeta { margin: 8px var(--pad) 0; font-size: 12px; color: var(--sub); }
   .note { margin: 48px var(--pad) 0; font-size: 12px; color: var(--sub); line-height: 1.6; }
   /* 下に浮かぶ再生ボタン。Apple Music のミニプレーヤーの位置 */
