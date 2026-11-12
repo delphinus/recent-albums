@@ -10,6 +10,7 @@
 <title>最近のアルバム</title>
 <style>
   :root { color-scheme: light dark; --sub: #8e8e93; --line: rgba(128,128,128,.25); --accent: #fa2d48; }
+  [hidden] { display: none !important; }
   body { margin: 0; font: 16px -apple-system, system-ui, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
   header { position: sticky; top: 0; z-index: 1; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
            background: Canvas; border-bottom: 1px solid var(--line); }
@@ -21,20 +22,28 @@
   #q { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 10px; font-size: 16px;
        border: 1px solid var(--line); border-radius: 8px; background: none; color: inherit; }
   h2 { font-size: 15px; margin: 0; padding: 12px 12px 4px; color: var(--sub); }
-  .pl-icon { flex: none; width: 48px; height: 48px; border-radius: 8px; background: var(--line);
-             display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--sub); }
+  .pl-icon { flex: none; width: 64px; height: 64px; border-radius: 8px; background: var(--line);
+             display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--sub); }
   h1 small { font-size: 12px; font-weight: normal; color: var(--sub); }
   .chips { display: flex; gap: 6px; overflow-x: auto; }
   .chip { flex: none; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; font-size: 13px;
           background: none; color: inherit; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  ul { list-style: none; margin: 0; padding: 0; }
+  ul, ol { list-style: none; margin: 0; padding: 0; }
   li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
   li a { color: inherit; text-decoration: none; }
-  .row { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; padding: 8px 12px; }
+  .row { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; padding: 8px 12px; cursor: pointer; }
   .row:active { background: var(--line); }
   .mix-only { flex: none; margin-right: 12px; border: 1px solid var(--accent); border-radius: 14px; padding: 4px 10px;
               font-size: 13px; color: var(--accent); }
+  /* アートワークの右下の再生ボタン。押すと中身を開かずにそのまま流す。指で押しやすいよう、見た目より広く反応させる */
+  .thumb { position: relative; flex: none; }
+  .play { position: absolute; right: 4px; bottom: 4px; width: 32px; height: 32px; border-radius: 50%;
+          background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+  .play::before { content: ""; position: absolute; inset: -8px; }
+  .pl-icon + .play { width: 26px; height: 26px; right: -4px; bottom: -4px; }
+  .play:active { transform: scale(.9); }
   .art { flex: none; width: 96px; height: 96px; border-radius: 8px; background: var(--line); object-fit: cover; }
   .info { min-width: 0; }
   .title { font-weight: 600; }
@@ -42,6 +51,7 @@
   .unplayed { color: var(--accent); font-weight: 600; }
   .partial { color: #ff9f0a; font-weight: 600; }
   #status { padding: 16px 12px; color: var(--sub); }
+  #status:empty { display: none; }
   .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 12px; padding: 12px; }
   .folder { position: relative; font-size: 12px; text-align: center; }
   .folder a { color: inherit; text-decoration: none; }
@@ -57,6 +67,26 @@
   .series-head h2 { flex: 1; min-width: 0; padding: 0; color: inherit; }
   .series-head button { flex: none; font-size: 14px; }
   .series-head .random { text-decoration: none; border: 1px solid var(--accent); border-radius: 14px; padding: 4px 10px; background: none; color: var(--accent); }
+  .detail-head { padding: 8px 12px; }
+  .detail-head button { font-size: 14px; }
+  .hero { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; padding: 4px 12px 12px;
+          border-bottom: 1px solid var(--line); }
+  .hero .art, .hero .pl-icon { width: 160px; height: 160px; font-size: 56px; }
+  .hero .info { flex: 1; min-width: 180px; }
+  .hero .title { font-size: 20px; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions a { text-decoration: none; border-radius: 18px; padding: 7px 16px; font-size: 15px; font-weight: 600; }
+  .play-all { background: var(--accent); color: #fff; }
+  .actions .mix-only { margin: 0; font-weight: normal; }
+  .tracks li { gap: 10px; padding: 6px 12px; font-size: 15px; }
+  .tracks .no { flex: none; width: 1.8em; text-align: right; color: var(--sub); font-size: 13px; }
+  .tracks .small-art { flex: none; width: 40px; height: 40px; border-radius: 4px; background: var(--line); object-fit: cover; }
+  .tracks .t { flex: 1; min-width: 0; }
+  .tracks .t div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tracks .sub { font-size: 13px; color: var(--sub); }
+  .tracks .num { flex: none; font-size: 13px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .tracks .unheard { color: var(--accent); }
+  .disc { font-size: 13px; padding: 10px 12px 4px; color: var(--sub); }
 </style>
 </head>
 <body>
@@ -76,6 +106,14 @@ let albums = [], genre = "", state = "", djMixOnly = false;
 let view = "recent", playlists = null, series = null, openSeries = "", results = null, query = "";
 // 月ごとのリプレイの一覧。プレイリストの画面の先頭に出し、/replay へ飛ぶ
 let topMonths = null;
+// 開いているアルバム・プレイリスト。{ type: "album" | "playlist", key, data }。data は取得するまで null
+let detail = null;
+const detailCache = new Map();
+// 中身を開く前の位置。戻ったときにそこへ戻す
+let listScroll = 0;
+// 中身の画面を履歴に積んだか。URL から直接開いたときは積んでいないので、戻るで前のページへ出ないようにする
+let detailPushed = false;
+const PLAY_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
 const SHUFFLE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" '
   + 'stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>';
 
@@ -92,6 +130,8 @@ const fmtAge = s => {
   const days = Math.floor((Date.now() - new Date(s)) / 86400e3);
   return days === 0 ? "今日" : days < 30 ? `${days} 日前` : `${Math.floor(days / 30)} か月前`;
 };
+// 曲の長さ (5:07)
+const fmtTime = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
 const fmtDur = sec => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`; };
 // ランキングの to は控えを取った日なので、聴いた期間はその前日まで
 const fmtRange = m => `${fmtDate(m.from)}〜${fmtDate(new Date(new Date(m.to) - 86400e3))}`;
@@ -107,10 +147,16 @@ function chip(label, on, onclick) {
   return b;
 }
 
+const playButton = href => `<a class="play" href="${href}" aria-label="再生">${PLAY_SVG}</a>`;
+
+// 行を押すと中身を開き、アートワークの再生ボタンを押すとそのまま流す
 function albumRow(a) {
   return `
-    <li><a class="row" href="${runUrl(SHORTCUT, a.album)}">
-      <img class="art" loading="lazy" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
+    <li><div class="row" data-album="${esc(a.album)}">
+      <div class="thumb">
+        <img class="art" loading="lazy" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
+        ${playButton(runUrl(SHORTCUT, a.album))}
+      </div>
       <div class="info">
       <div class="title">${esc(a.album)}</div>
       <div class="meta"><span>${esc(a.artist)}</span></div>
@@ -126,19 +172,19 @@ function albumRow(a) {
         ${a.djMix === "part" ? "<span>一部が mix</span>" : ""}
       </div>
       </div>
-    </a>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">${a.djMix === "part" ? "mix だけ" : "一部だけ"}</a>` : ""}</li>`;
+    </div>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">${a.djMix === "part" ? "mix だけ" : "一部だけ"}</a>` : ""}</li>`;
 }
 
 function playlistRow(p) {
   return `
-    <li><a class="row" href="${runUrl(PLAYLIST_SHORTCUT, p.name)}">
-      <div class="pl-icon">♫</div>
+    <li><div class="row" data-playlist="${p.id}">
+      <div class="thumb"><div class="pl-icon">♫</div>${playButton(runUrl(PLAYLIST_SHORTCUT, p.name))}</div>
       <div class="info">
       <div class="title">${esc(p.name)}</div>
       ${p.folder ? `<div class="meta"><span>${esc(p.folder)}</span></div>` : ""}
       <div class="meta"><span>${p.tracks} 曲 · ${fmtDur(p.duration)}</span>${p.smart ? "<span>スマート</span>" : ""}</div>
       </div>
-    </a></li>`;
+    </div></li>`;
 }
 
 // シリーズのアイコンは、新しい 4 枚のアートワークを 2x2 に並べたフォルダにする
@@ -172,6 +218,52 @@ function topMonthRow(m) {
     </a></li>`;
 }
 
+const plays = n => `<span class="num${n ? "" : " unheard"}">${n ? `▶ ${n}` : "未再生"}</span>`;
+
+function albumDetail({ album: a, tracks }) {
+  const discs = new Set(tracks.map(t => t.disc)).size > 1;
+  // アーティストは、アルバムのアーティストと違う曲 (コンピレーション・DJ mix) だけに出す
+  const rows = tracks.map((t, i) => `
+    ${discs && t.disc !== tracks[i - 1]?.disc ? `</ol><div class="disc">ディスク ${t.disc}</div><ol class="tracks">` : ""}
+    <li><span class="no">${t.no || i + 1}</span>
+      <div class="t"><div>${esc(t.name)}</div>${t.artist && t.artist !== a.artist ? `<div class="sub">${esc(t.artist)}</div>` : ""}</div>
+      ${plays(t.plays)}<span class="num">${fmtTime(t.duration)}</span></li>`);
+  return `
+    <div class="hero">
+      <img class="art" src="/art/${a.artPid}" alt="" onerror="this.removeAttribute('src')">
+      <div class="info">
+        <div class="title">${esc(a.album)}</div>
+        <div class="meta"><span>${esc(a.artist)}</span></div>
+        <div class="meta"><span>${a.genre ? `${esc(a.genre)} · ` : ""}追加 ${fmtDate(a.dateAdded)}</span>
+          <span>${a.tracks} 曲 · ${fmtDur(a.duration)}</span>${a.djMix === "part" ? "<span>一部が mix</span>" : ""}</div>
+        <div class="actions"><a class="play-all" href="${runUrl(SHORTCUT, a.album)}">▶ 再生</a>${a.mixPlaylist
+          ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">${a.djMix === "part" ? "mix だけ" : "一部だけ"}</a>` : ""}</div>
+      </div>
+    </div>
+    ${tracks.length ? `<ol class="tracks">${rows.join("")}</ol>` : '<div id="status">曲の一覧は次の更新で出ます</div>'}`;
+}
+
+function playlistDetail({ playlist: p, tracks }) {
+  const rows = tracks.map((t, i) => `
+    <li><span class="no">${i + 1}</span>
+      <img class="small-art" loading="lazy" src="/art/${t.artPid}" alt="" onerror="this.removeAttribute('src')">
+      <div class="t"><div>${esc(t.name)}</div><div class="sub">${esc(t.artist)} — ${esc(t.album)}</div></div>
+      ${plays(t.plays)}<span class="num">${fmtTime(t.duration)}</span></li>`);
+  const more = p.tracks - tracks.length;
+  return `
+    <div class="hero">
+      <div class="pl-icon">♫</div>
+      <div class="info">
+        <div class="title">${esc(p.name)}</div>
+        ${p.folder ? `<div class="meta"><span>${esc(p.folder)}</span></div>` : ""}
+        <div class="meta"><span>${p.tracks} 曲 · ${fmtDur(p.duration)}</span>${p.smart ? "<span>スマート</span>" : ""}</div>
+        <div class="actions"><a class="play-all" href="${runUrl(PLAYLIST_SHORTCUT, p.name)}">▶ 再生</a></div>
+      </div>
+    </div>
+    ${tracks.length ? `<ol class="tracks">${rows.join("")}</ol>` : p.tracks ? '<div id="status">曲の一覧は次の更新で出ます</div>' : ""}
+    ${tracks.length && more > 0 ? `<div class="disc">ほか ${more} 曲</div>` : ""}`;
+}
+
 const section = (title, rows) => rows.length ? `${title ? `<h2>${title}</h2>` : ""}<ul>${rows.join("")}</ul>` : "";
 
 function render() {
@@ -182,6 +274,7 @@ function render() {
     b.onclick = () => {
       view = k;
       openSeries = "";
+      detail = null;
       // 開いているタブを URL に残す。リプレイの画面から戻ったとき、同じタブを開くため
       history.replaceState(null, "", k === "recent" ? location.pathname : "?view=" + k);
       render();
@@ -190,8 +283,16 @@ function render() {
   }));
   const chips = document.getElementById("chips");
   const list = document.getElementById("list"), status = document.getElementById("status");
+  // 中身を開いている間は、検索欄と絞り込みを隠す
+  document.getElementById("q").hidden = !!detail;
   // 検索中は検索結果だけを出す。絞り込みのチップは最近のアルバムにだけ効く
-  chips.hidden = query !== "" || view !== "recent";
+  chips.hidden = !!detail || query !== "" || view !== "recent";
+  if (detail) {
+    status.textContent = detail.data ? "" : "読み込み中…";
+    list.innerHTML = '<div class="detail-head"><button data-close>‹ 戻る</button></div>'
+      + (detail.data ? (detail.type === "album" ? albumDetail : playlistDetail)(detail.data) : "");
+    return;
+  }
   if (query) {
     if (!results) { status.textContent = "検索中…"; list.innerHTML = ""; return; }
     status.textContent = results.albums.length || results.series.length || results.playlists.length ? "" : "見つかりません";
@@ -269,8 +370,59 @@ function playRandom(name) {
   location.href = a.mixPlaylist ? runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist) : runUrl(SHORTCUT, a.album);
 }
 
-// シリーズを開く・戻る・ランダムに再生する。行は innerHTML で作り直すので、まとめてここで受ける
+const detailUrl = (type, key) => `?${type}=${encodeURIComponent(key)}`;
+
+// 中身を出す。履歴は呼ぶ側で積む。一度取ったものは取り直さない
+async function showDetail(type, key) {
+  detail = { type, key, data: detailCache.get(type + key) ?? null };
+  render();
+  if (detail.data) return;
+  try {
+    const data = await getJSON(`/api/${type}?${type === "album" ? "name" : "id"}=${encodeURIComponent(key)}`);
+    detailCache.set(type + key, data);
+    if (detail?.type === type && detail.key === key) { detail.data = data; render(); }
+  } catch (e) {
+    document.getElementById("status").textContent = "取得に失敗しました: " + e.message;
+  }
+}
+
+function openDetail(type, key) {
+  listScroll = window.scrollY;
+  history.pushState({ detail: { type, key } }, "", detailUrl(type, key));
+  detailPushed = true;
+  showDetail(type, key);
+  window.scrollTo(0, 0);
+}
+
+function closeDetail() {
+  if (detailPushed) return history.back();
+  // URL から直接開いたときは、戻る先がこのページの外なので、その場で一覧に切り替える
+  detail = null;
+  history.replaceState(null, "", view === "recent" ? location.pathname : "?view=" + view);
+  render();
+}
+
+// iPhone の端から戻る操作やブラウザの戻る・進むでも、中身と一覧を行き来する
+window.onpopstate = e => {
+  const d = e.state?.detail;
+  if (d) {
+    listScroll = detail ? listScroll : window.scrollY;
+    showDetail(d.type, d.key);
+    window.scrollTo(0, 0);
+    return;
+  }
+  detail = null;
+  render();
+  window.scrollTo(0, listScroll);
+};
+
+// シリーズを開く・戻る・ランダムに再生する、アルバムやプレイリストの中身を開く。
+// 行は innerHTML で作り直すので、まとめてここで受ける。再生ボタン (a.play) はリンクのまま流す
 document.getElementById("list").onclick = e => {
+  if (e.target.closest("a")?.href.startsWith("shortcuts:")) return;
+  if (e.target.closest("[data-close]")) return closeDetail();
+  const row = e.target.closest("[data-album], [data-playlist]");
+  if (row) return "album" in row.dataset ? openDetail("album", row.dataset.album) : openDetail("playlist", row.dataset.playlist);
   const t = e.target.closest("[data-open], [data-random], [data-back]");
   if (!t) return;
   e.preventDefault();
@@ -327,6 +479,14 @@ const oldTop = new URLSearchParams(location.search).get("top");
 if (oldTop) location.replace("/replay?month=" + encodeURIComponent(oldTop));
 const startView = new URLSearchParams(location.search).get("view");
 if (startView in VIEWS) view = startView;
+// ?album=<名前> / ?playlist=<id> で中身を直接開く
+for (const type of ["album", "playlist"]) {
+  const key = new URLSearchParams(location.search).get(type);
+  if (key) {
+    history.replaceState({ detail: { type, key } }, "", location.href);
+    showDetail(type, key);
+  }
+}
 load(false);
 </script>
 </body>

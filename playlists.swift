@@ -21,17 +21,24 @@ func folderPath(_ p: ITLibPlaylist) -> String {
     return names.joined(separator: " / ")
 }
 
+// 開いたときに出す曲は先頭のこれだけ。ライブラリ全体に近いスマートプレイリストもあり、全部を持つと重い
+let playlistItems = 500
+
+let hex = { (id: NSNumber) in String(format: "%016llX", id.uint64Value) }
+
 // ライブラリ全体や「ミュージックビデオ」のような Music が用意するもの、フォルダ自体は除く
 let rows: [[String: Any]] = lib.allPlaylists
     .filter { !$0.isPrimary && $0.distinguishedKind == .kindNone && $0.kind != .folder && $0.isVisible }
     .map { p in
         [
-            "id": String(format: "%016llX", p.persistentID.uint64Value),
+            "id": hex(p.persistentID),
             "name": p.name,
             "folder": folderPath(p),
             "smart": p.kind == .smart,
             "tracks": p.items.count,
             "duration": p.items.reduce(0) { $0 + $1.totalTime } / 1000,
+            // 曲の persistentID。Music.app のスクリプトから取るものと同じ表記にする
+            "items": p.items.prefix(playlistItems).map { hex($0.persistentID) },
         ]
     }
 let data = try JSONSerialization.data(withJSONObject: rows)

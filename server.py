@@ -18,6 +18,7 @@ DJ mix かどうかは、プレイリスト「DJ Mix」に曲が入っている�
 問い合わせは 3 秒ほど掛かり、たまにしか開かない使い方では要求時に取るとほぼ毎回待たされる。
 
 検索とプレイリストの一覧のために、ライブラリ全体のアルバムとプレイリストも同じ間隔で取り直しておく。
+アルバムやプレイリストを開いたときに曲の一覧を出せるよう、曲ごとの情報も一緒に持っておく。
 
 シリーズは、アルバム名の番号より前の部分が同じアルバムが SERIES_MIN 枚以上あるものとみなす。
 ライブラリにはシリーズを示す情報が無く、"Otographic Arts 029" のように名前に番号を振る形がほとんどのため。
@@ -132,6 +133,20 @@ def dj_mix_kind(album: str, ts: list[dict], dj_mix_ids: set[str]) -> str | None:
     return "full" if DJ_MIX_RE.search(album) and not NOT_DJ_MIX_RE.search(album) else None
 
 
+def track_rows(tracks: list[dict]) -> list[dict]:
+    """アルバムやプレイリストを開いたときに出す、曲ごとの情報。group_albums と同じく実体の無い項目は除く。"""
+    return [{
+        "pid": t["persistentID"],
+        "name": t.get("name") or "",
+        "artist": t.get("artist") or "",
+        "album": t["album"],
+        "disc": t.get("discNumber") or 0,
+        "no": t.get("trackNumber") or 0,
+        "duration": t["duration"],
+        "plays": t.get("playedCount") or 0,
+    } for t in tracks if t.get("album") and t.get("duration")]
+
+
 def group_albums(tracks: list[dict], dj_mix_ids: set[str], playlists: set[str]) -> list[dict]:
     by_album: dict[str, list[dict]] = {}
     for t in tracks:
@@ -216,6 +231,7 @@ def refresh_snapshot(days: int) -> dict:
         snap = {
             "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "albums": group_albums(fetched["tracks"], set(fetched["djMixIds"]), set(fetched["playlists"])),
+            "tracks": track_rows(fetched["tracks"]),
         }
         _snapshots[days] = snap
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -251,6 +267,7 @@ def refresh_library() -> dict:
             "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "albums": group_albums(fetched["tracks"], set(fetched["djMixIds"]), set(fetched["playlists"])),
             "playlists": fetch_playlists(),
+            "tracks": track_rows(fetched["tracks"]),
         }
         _library = lib
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -271,6 +288,39 @@ def get_library() -> dict:
     return _library
 
 
+def without(d: dict, key: str) -> dict:
+    """一覧の応答から曲ごとの情報 (一覧の "tracks"、プレイリストの "items") を外す。"""
+    return {k: v for k, v in d.items() if k != key}
+
+
+def album_detail(name: str) -> dict | None:
+    """アルバムと、その曲をディスク・トラック番号の順に返す。
+
+    最近の一覧のほうが新しいことがある (ライブラリ全体は後から取り直す) ので、そちらを先に見る。
+    曲の情報を持たない古いキャッシュでは、曲の一覧は空になる。
+    """
+    for src in (get_snapshot(Handler.default_days, False), get_library()):
+        album = next((a for a in src["albums"] if a["album"] == name), None)
+        if album:
+            tracks = sorted((t for t in src.get("tracks", []) if t["album"] == name),
+                            key=lambda t: (t["disc"], t["no"]))
+            return {"album": album, "tracks": tracks}
+    return None
+
+
+def playlist_detail(pid: str) -> dict | None:
+    """プレイリストと、その曲を並び順に返す。曲は playlists.swift が出した先頭の playlistItems 曲まで。"""
+    lib = get_library()
+    p = next((p for p in lib["playlists"] if p["id"] == pid), None)
+    if not p:
+        return None
+    by_pid = {t["pid"]: t for t in lib.get("tracks", [])}
+    # 曲ごとにアートワークを取ると 曲の数だけ osascript を呼ぶことになるので、アルバムの代表の曲のものを使う
+    art = {a["album"]: a["artPid"] for a in lib["albums"]}
+    tracks = [t | {"artPid": art.get(t["album"], t["pid"])} for i in p.get("items", []) if (t := by_pid.get(i))]
+    return {"playlist": without(p, "items"), "tracks": tracks}
+
+
 def normalize(s: str) -> str:
     # 全角・半角や大文字・小文字の違いを無視して比べる
     return unicodedata.normalize("NFKC", s).casefold()
@@ -289,7 +339,7 @@ def search(q: str) -> dict:
         "albums": [a for a in lib["albums"] if hit(a["album"], a["artist"])][:SEARCH_LIMIT],
         "series": [{k: v for k, v in s.items() if k != "albums"} | {"count": len(s["albums"])}
                    for s in list_series() if hit(s["name"])],
-        "playlists": [p for p in lib["playlists"] if hit(p["name"], p["folder"])][:SEARCH_LIMIT],
+        "playlists": [without(p, "items") for p in lib["playlists"] if hit(p["name"], p["folder"])][:SEARCH_LIMIT],
     }
 
 
@@ -377,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(u.query, keep_blank_values=True)
             days = int(q.get("days", [self.default_days])[0])
             try:
-                body = json.dumps(get_snapshot(days, "refresh" in q), ensure_ascii=False)
+                body = json.dumps(without(get_snapshot(days, "refresh" in q), "tracks"), ensure_ascii=False)
                 self._send(200, "application/json; charset=utf-8", body.encode())
             except subprocess.CalledProcessError as e:
                 self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
@@ -393,10 +443,21 @@ class Handler(BaseHTTPRequestHandler):
                     body = {"fetchedAt": get_library()["fetchedAt"], "series": list_series()}
                 else:
                     lib = get_library()
-                    body = {"fetchedAt": lib["fetchedAt"], "playlists": lib["playlists"]}
+                    body = {"fetchedAt": lib["fetchedAt"], "playlists": [without(p, "items") for p in lib["playlists"]]}
                 self._send(200, "application/json; charset=utf-8", json.dumps(body, ensure_ascii=False).encode())
             except subprocess.CalledProcessError as e:
                 self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
+        elif u.path in ("/api/album", "/api/playlist"):
+            key = parse_qs(u.query).get("name" if u.path == "/api/album" else "id", [""])[0]
+            try:
+                body = album_detail(key) if u.path == "/api/album" else playlist_detail(key)
+            except subprocess.CalledProcessError as e:
+                self._send(500, "text/plain; charset=utf-8", e.stderr.encode())
+                return
+            if body:
+                self._send(200, "application/json; charset=utf-8", json.dumps(body, ensure_ascii=False).encode())
+            else:
+                self._send(404, "text/plain; charset=utf-8", "見つかりません".encode())
         elif u.path == "/api/top":
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"months": list_top()}, ensure_ascii=False).encode())
