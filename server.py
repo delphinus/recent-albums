@@ -147,6 +147,25 @@ def track_rows(tracks: list[dict]) -> list[dict]:
     } for t in tracks if t.get("album") and t.get("duration")]
 
 
+def playlist_art(playlists: list[dict], tracks: list[dict], albums: list[dict]) -> None:
+    """プレイリストのアイコンに使うアートワークを、含む曲のアルバムから選んで "artPids" に入れる。
+
+    Music.app のスクリプトからはプレイリストに設定したアートワークを読めない (どれも 0 枚と返る) ので、
+    Apple Music が設定の無いプレイリストに使うのと同じく、曲順で最初の 4 枚のアルバムのものを並べる。
+    """
+    album_of = {t["pid"]: t["album"] for t in tracks}
+    art = {a["album"]: a["artPid"] for a in albums}
+    for p in playlists:
+        seen: dict[str, str] = {}
+        for i in p.get("items", []):
+            name = album_of.get(i)
+            if name and name not in seen and name in art:
+                seen[name] = art[name]
+                if len(seen) == 4:
+                    break
+        p["artPids"] = list(seen.values())
+
+
 def group_albums(tracks: list[dict], dj_mix_ids: set[str], playlists: set[str]) -> list[dict]:
     by_album: dict[str, list[dict]] = {}
     for t in tracks:
@@ -269,6 +288,7 @@ def refresh_library() -> dict:
             "playlists": fetch_playlists(),
             "tracks": track_rows(fetched["tracks"]),
         }
+        playlist_art(lib["playlists"], lib["tracks"], lib["albums"])
         _library = lib
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         tmp = library_path().with_suffix(".tmp")
@@ -343,12 +363,32 @@ def search(q: str) -> dict:
     }
 
 
+TOP_ARTISTS = 10  # カードに出すトップアーティストの数
+
+
+def top_summary(t: dict) -> dict:
+    return {k: t[k] for k in ("name", "from", "to")} | {
+        "count": len(t["tracks"]),
+        "minutes": t.get("minutes", 0),
+        "artists": [a["name"] for a in t.get("artists", [])[:TOP_ARTISTS]],
+    }
+
+
 def list_top() -> list[dict]:
     """月ごとのランキングの一覧。新しい月が先。曲の明細は含めない。"""
     out = []
     for p in sorted(TOP_DIR.glob("*.json"), reverse=True):
         t = json.loads(p.read_text())
-        out.append({k: t[k] for k in ("month", "name", "from", "to")} | {"count": len(t["tracks"])})
+        out.append({"month": t["month"]} | top_summary(t))
+    return out
+
+
+def list_years() -> list[dict]:
+    """年間のリプレイの一覧。新しい年が先。"""
+    out = []
+    for p in sorted((TOP_DIR / "year").glob("*.json"), reverse=True):
+        t = json.loads(p.read_text())
+        out.append({"year": t["year"]} | top_summary(t))
     return out
 
 
@@ -374,6 +414,10 @@ def refresher(days: int, interval: int):
                       flush=True)
                 for s in list_series():
                     for pid in s["artPids"]:
+                        get_artwork(pid)
+                # 初めての回は数千枚になり時間が掛かるが、2 回目からはほぼキャッシュに当たる
+                for p in lib["playlists"]:
+                    for pid in p.get("artPids", []):
                         get_artwork(pid)
             else:
                 print("refresh skipped: Music is not running", flush=True)
@@ -460,7 +504,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain; charset=utf-8", "見つかりません".encode())
         elif u.path == "/api/top":
             self._send(200, "application/json; charset=utf-8",
-                       json.dumps({"months": list_top()}, ensure_ascii=False).encode())
+                       json.dumps({"months": list_top(), "years": list_years()}, ensure_ascii=False).encode())
         elif u.path.startswith("/api/top/") and MONTH_RE.fullmatch(u.path[9:]):
             f = TOP_DIR / f"{u.path[9:]}.json"
             if f.exists():

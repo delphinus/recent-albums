@@ -42,7 +42,39 @@
           background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
           box-shadow: 0 1px 4px rgba(0,0,0,.35); }
   .play::before { content: ""; position: absolute; inset: -8px; }
-  .pl-icon + .play { width: 26px; height: 26px; right: -4px; bottom: -4px; }
+  .thumb.sm .play { width: 26px; height: 26px; right: -4px; bottom: -4px; }
+  /* プレイリストのアイコン。含む曲のアルバムのアートワークを 2x2 に並べる (4 枚に満たなければ 1 枚) */
+  .mosaic { flex: none; width: 64px; height: 64px; border-radius: 8px; overflow: hidden; background: var(--line);
+            display: grid; grid-template-columns: 1fr 1fr; }
+  .mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .mosaic.one { grid-template-columns: 1fr; }
+  /* 月間ランキングのカード。music.apple.com の「リプレイ: あなたのトップミュージック」に寄せる */
+  .cards { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 12px 16px;
+           scroll-padding: 0 12px; scrollbar-width: none; }
+  .cards::-webkit-scrollbar { display: none; }
+  /* ▶ はカードのリンクの中に入れられない (リンクの入れ子になる) ので、包む要素に重ねる */
+  .cardwrap { position: relative; flex: none; width: min(46vw, 260px); scroll-snap-align: start; container-type: inline-size; }
+  .card { position: relative; width: 100%; aspect-ratio: 3 / 4; display: flex; flex-direction: column; padding: 9cqw 8cqw 8cqw;
+          box-sizing: border-box; border-radius: 14px; overflow: hidden; color: #fff; text-decoration: none;
+          box-shadow: 0 6px 20px rgba(0,0,0,.18);
+          /* 色相 --h を月ごとに変え、3 つのぼかしを重ねる */
+          background:
+            radial-gradient(circle at 85% 10%, hsl(calc(var(--h) + 150) 75% 62%), transparent 55%),
+            radial-gradient(circle at 10% 60%, hsl(calc(var(--h) + 60) 80% 60%), transparent 60%),
+            linear-gradient(160deg, hsl(var(--h) 85% 60%), hsl(calc(var(--h) - 30) 80% 52%)); }
+  .card.year { background: radial-gradient(ellipse at 50% 45%, rgba(255,90,60,.55), transparent 60%),
+                           linear-gradient(180deg, #f3bd45 0%, #f2a23d 30%, #ec7444 60%, #e08a3a 100%); }
+  .card > * { position: relative; }
+  .card .label { font-size: 14cqw; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .card .big { margin-top: 5cqw; font-size: 30cqw; font-weight: 700; letter-spacing: -.04em; line-height: .9; }
+  .card.year .big { font-size: 46cqw; font-weight: 500; margin-left: -2cqw; }
+  .card .big small { display: block; margin-top: 3cqw; font-size: 9cqw; font-weight: 600; letter-spacing: 0; opacity: .85; }
+  .card .who { margin-top: auto; font-size: 5.6cqw; line-height: 1.45; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,.2);
+               overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+  .cardwrap > .go { position: absolute; top: 5cqw; right: 5cqw; width: 16cqw; height: 16cqw; border-radius: 50%;
+              display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.92); color: #e0612f; }
+  .cardwrap > .go svg { width: 45%; height: 45%; }
+  .card-meta { font-size: 12px; color: var(--sub); margin-top: 6px; }
   .play:active { transform: scale(.9); }
   .art { flex: none; width: 96px; height: 96px; border-radius: 8px; background: var(--line); object-fit: cover; }
   .info { min-width: 0; }
@@ -71,7 +103,7 @@
   .detail-head button { font-size: 14px; }
   .hero { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; padding: 4px 12px 12px;
           border-bottom: 1px solid var(--line); }
-  .hero .art, .hero .pl-icon { width: 160px; height: 160px; font-size: 56px; }
+  .hero .art, .hero .pl-icon, .hero .mosaic { width: 160px; height: 160px; font-size: 56px; }
   .hero .info { flex: 1; min-width: 180px; }
   .hero .title { font-size: 20px; }
   .actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -105,7 +137,7 @@ const VIEWS = { recent: "最近", series: "シリーズ", playlists: "プレイ�
 let albums = [], genre = "", state = "", djMixOnly = false;
 let view = "recent", playlists = null, series = null, openSeries = "", results = null, query = "";
 // 月ごとのリプレイの一覧。プレイリストの画面の先頭に出し、/replay へ飛ぶ
-let topMonths = null;
+let topMonths = null, topYears = null;
 // 開いているアルバム・プレイリスト。{ type: "album" | "playlist", key, data }。data は取得するまで null
 let detail = null;
 const detailCache = new Map();
@@ -175,10 +207,19 @@ function albumRow(a) {
     </div>${a.mixPlaylist ? `<a class="mix-only" href="${runUrl(PLAYLIST_SHORTCUT, a.mixPlaylist)}">${a.djMix === "part" ? "mix だけ" : "一部だけ"}</a>` : ""}</li>`;
 }
 
+// 4 枚あれば 2x2、それより少なければ先頭の 1 枚。曲の情報が無い古いキャッシュでは ♫
+function playlistArt(p) {
+  const pids = p.artPids || [];
+  if (!pids.length) return '<div class="pl-icon">♫</div>';
+  const imgs = (pids.length >= 4 ? pids : pids.slice(0, 1)).map(pid =>
+    `<img loading="lazy" src="/art/${pid}" alt="" onerror="this.removeAttribute('src')">`).join("");
+  return `<div class="mosaic${pids.length >= 4 ? "" : " one"}">${imgs}</div>`;
+}
+
 function playlistRow(p) {
   return `
     <li><div class="row" data-playlist="${p.id}">
-      <div class="thumb"><div class="pl-icon">♫</div>${playButton(runUrl(PLAYLIST_SHORTCUT, p.name))}</div>
+      <div class="thumb sm">${playlistArt(p)}${playButton(runUrl(PLAYLIST_SHORTCUT, p.name))}</div>
       <div class="info">
       <div class="title">${esc(p.name)}</div>
       ${p.folder ? `<div class="meta"><span>${esc(p.folder)}</span></div>` : ""}
@@ -209,13 +250,31 @@ function seriesRow(s) {
     </a></li>`;
 }
 
-function topMonthRow(m) {
+// カードを押すとリプレイの画面を開き、右上の ▶ でそのプレイリストを流す
+function replayCard({ cls, hue, href, playlist, big, who, meta }) {
   return `
-    <li><a class="row" href="/replay?month=${m.month}">
-      <div class="pl-icon">↻</div>
-      <div class="info"><div class="title">${esc(m.name)}</div>
-      <div class="meta"><span>${m.count} 曲</span><span>${fmtRange(m)} の再生回数</span></div></div>
-    </a></li>`;
+    <div class="cardwrap"><a class="card ${cls}" style="--h: ${hue}" href="${href}">
+      <span class="label">Replay</span><span class="big">${big}</span>
+      ${who.length ? `<span class="who">${who.map(esc).join("、")}</span>` : ""}
+    </a>
+    <a class="go" href="${runUrl(PLAYLIST_SHORTCUT, playlist)}" aria-label="${esc(playlist)} を再生">${PLAY_SVG}</a>
+    <div class="card-meta">${meta}</div></div>`;
+}
+
+// 年間は最新の年だけ、その年の最後の月のリプレイの画面の末尾 (年間のカード) を開く
+function replayCards() {
+  const y = topYears?.[0];
+  const last = y && topMonths.find(m => m.month.startsWith(y.year));
+  const cards = [];
+  if (y && last) cards.push(replayCard({ cls: "year", hue: 0, href: `/replay?month=${last.month}#year`, playlist: y.name,
+    big: `’${y.year.slice(2)}`, who: y.artists, meta: `${esc(y.name)} · ${y.count} 曲` }));
+  for (const m of topMonths) {
+    const mon = +m.month.slice(5);
+    cards.push(replayCard({ cls: "", hue: (mon * 29 + 330) % 360, href: `/replay?month=${m.month}`, playlist: m.name,
+      big: `${mon}月<small>${m.month.slice(0, 4)}</small>`, who: m.artists || [],
+      meta: `${m.count} 曲 · ${fmtRange(m)}` }));
+  }
+  return cards.length ? `<h2>リプレイ: あなたのトップミュージック</h2><div class="cards">${cards.join("")}</div>` : "";
 }
 
 const plays = n => `<span class="num${n ? "" : " unheard"}">${n ? `▶ ${n}` : "未再生"}</span>`;
@@ -252,7 +311,7 @@ function playlistDetail({ playlist: p, tracks }) {
   const more = p.tracks - tracks.length;
   return `
     <div class="hero">
-      <div class="pl-icon">♫</div>
+      ${playlistArt(p)}
       <div class="info">
         <div class="title">${esc(p.name)}</div>
         ${p.folder ? `<div class="meta"><span>${esc(p.folder)}</span></div>` : ""}
@@ -320,7 +379,7 @@ function render() {
     if (!playlists) { status.textContent = "読み込み中…"; list.innerHTML = ""; loadPlaylists(); return; }
     if (!topMonths) loadTopMonths();
     status.textContent = "";
-    list.innerHTML = section("月間ランキング", (topMonths || []).map(topMonthRow))
+    list.innerHTML = (topMonths ? replayCards() : "")
       + section(topMonths?.length ? "すべてのプレイリスト" : "", playlists.map(playlistRow));
     return;
   }
@@ -359,7 +418,7 @@ async function loadOnce(name, url, set) {
   }
 }
 const loadPlaylists = () => loadOnce("playlists", "/api/playlists", r => { playlists = r.playlists; });
-const loadTopMonths = () => loadOnce("topMonths", "/api/top", r => { topMonths = r.months; });
+const loadTopMonths = () => loadOnce("topMonths", "/api/top", r => { topMonths = r.months; topYears = r.years || []; });
 const loadSeries = () => loadOnce("series", "/api/series", r => { series = r.series; });
 
 // 選んだアルバムに「<アルバム名> Mix」のプレイリストがあれば、そちらを流す

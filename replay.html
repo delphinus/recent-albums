@@ -168,7 +168,7 @@ function yearCard(y) {
   const who = y.artists.slice(0, 8).map(a => esc(a.name)).join("、");
   return `
     <h2>あなたの${y.year}年のトップソングをリプレイ</h2>
-    <a class="yearcard" href="${runUrl(PLAYLIST_SHORTCUT, y.name)}" aria-label="${esc(y.name)} を再生">
+    <a class="yearcard" id="year-card" href="${runUrl(PLAYLIST_SHORTCUT, y.name)}" aria-label="${esc(y.name)} を再生">
       <span class="label">Replay</span><span class="go">▶</span>
       <span class="yy">’${y.year.slice(2)}</span>
       <span class="who">${who}など</span></a>
@@ -230,6 +230,8 @@ function render(months, t, y) {
   // 選んでいる月のタブが見えるようにする
   document.querySelector("#months .on")?.scrollIntoView({ inline: "center", block: "nearest" });
   window.scrollTo(0, 0);
+  // プレイリストの画面の年間のカードから来たときは、年間のカードまで送る
+  if (location.hash === "#year") document.getElementById("year-card")?.scrollIntoView({ block: "center" });
 }
 
 (async () => {
